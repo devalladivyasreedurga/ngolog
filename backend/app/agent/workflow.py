@@ -239,7 +239,11 @@ def evaluate_expense(db: Session, req: ReportingRequest, claim: ExpenseClaim) ->
         select(Investigation).where(Investigation.claim_type == "expense", Investigation.claim_id == claim.id, Investigation.status == InvestigationStatus.OPEN)
     )
 
-    if cmp.matches:
+    if cmp.unreadable_evidence_ids:
+        # Waiting for the NGO to type a total: the upload step already asked, so this
+        # is not a discrepancy and must not use up a clarification round.
+        claim.evidence_status = EvidenceReviewStatus.SUBMITTED
+    elif cmp.matches:
         claim.evidence_status = EvidenceReviewStatus.CONSISTENT
         if open_inv:
             open_inv.status = InvestigationStatus.RECONCILED
@@ -270,8 +274,6 @@ def _clarifying_question(claim: ExpenseClaim, cmp) -> str:
         return "One of the documents looks like a copy of a receipt already submitted, so I counted it once. Is there a different document for the rest?"
     if cmp.currency_mismatch_ids:
         return f"A document is in a different currency from the {cur} you reported. What exchange rate or converted amount should be used?"
-    if cmp.unreadable_evidence_ids and not cmp.counted_evidence_ids:
-        return "I couldn't read the total on the document. Please type the total shown on it so I can compare it."
     if cmp.gap_cents > 0:
         return (
             f"You reported {money(cmp.claim_cents, cur)} for \"{claim.description}\", but the documents total "

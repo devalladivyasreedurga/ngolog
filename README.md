@@ -1,0 +1,70 @@
+# NGOLog
+
+**Your donation shouldn't be the end of the story.**
+
+NGOLog is an AI-powered donation transparency platform built for the PayPal AI Hackathon. NGOs run campaigns,
+donors give through PayPal, and an AI accountability assistant follows up with the NGO about how funds were used,
+asks for suitable evidence, checks documents for consistency, asks about discrepancies, and drafts campaign-level
+donor updates. Nothing reaches donors until the NGO approves it.
+
+NGOLog does **not** hold funds, release payouts or declare fraud. "Consistent" means documents match what the NGO
+reported; it is not an audit.
+
+## What works today (P0 vertical slice)
+
+1. NGO creates a campaign; a reporting plan is drafted (Claude, or a template in manual mode), edited and accepted, then the campaign is published.
+2. Donor gives through the PayPal JS SDK v6 Donate button. The backend creates and captures a PayPal Orders v2 order (with `PayPal-Request-Id` idempotency) and records the capture; a verified `PAYMENT.CAPTURE.COMPLETED` webhook confirms it.
+3. The assistant opens a reporting request (idempotent per cycle) and asks for a spending update.
+4. NGO replies in plain words; Claude extracts proposed expense/activity claims for the NGO to confirm (or the NGO enters them by hand).
+5. NGO uploads receipts; Claude reads the totals (or the NGO types them). A deterministic check compares documents to the claim: $500 reported vs a $420 receipt opens a focused $80 question.
+6. A second $80 receipt reconciles the claim. The donor update draft is built only from stored records, with per-sentence provenance.
+7. NGO approves and publishes; the public campaign timeline and donor notifications update.
+
+Backend tests cover the full story plus idempotency, authorization, privacy and labelling rules (`backend/tests`).
+
+## Run locally
+
+Requirements: Python 3.12+, Node 20+.
+
+```bash
+cp .env.example .env            # add PayPal sandbox + Anthropic keys
+cd backend
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/alembic upgrade head
+.venv/bin/uvicorn app.main:app --port 8000
+```
+
+```bash
+cd frontend
+echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
+echo "NEXT_PUBLIC_PAYPAL_CLIENT_ID=<sandbox client id>" >> .env.local
+npm install && npm run dev       # http://localhost:3000
+```
+
+Run tests: `cd backend && .venv/bin/python -m pytest -q`
+
+Sign in at `/signin` with the demo NGO or demo donor buttons (passwordless demo auth).
+
+### PayPal sandbox setup
+
+1. developer.paypal.com → Apps & Credentials → Sandbox → create an app; copy the client ID and secret into `.env` (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) and the client ID into `frontend/.env.local`.
+2. Add a webhook to the app pointing at `<public backend URL>/api/paypal/webhook` with event `PAYMENT.CAPTURE.COMPLETED`; copy its ID into `PAYPAL_WEBHOOK_ID`. Locally, expose the backend with a tunnel (e.g. ngrok). Without the webhook, donations still record from the server-side capture and show "webhook pending".
+3. Pay with a sandbox personal (buyer) account from Sandbox → Accounts.
+
+Without `ANTHROPIC_API_KEY` the app runs in manual mode: the NGO enters claims and receipt totals by hand.
+
+## Tools
+
+| Tool | Role |
+|---|---|
+| PayPal Orders v2, JS SDK v6, Webhooks (sandbox) | Donation checkout, server-side capture, verified webhook confirmation |
+| Claude (`claude-opus-5-5`) | Reporting-plan drafting, claim extraction from NGO messages, receipt reading (structured outputs) |
+| FastAPI, SQLAlchemy, Alembic, Postgres/SQLite | API, ledger of donations/claims/evidence, audit log |
+| Next.js 16 | Campaign, donor and NGO pages |
+| Planned (P1) | LangGraph interrupt/resume, Elastic RAG + duplicate search, Zapier MCP email delivery, AG Grid console, Render hosting |
+
+## Repository map
+
+`contracts/` shared schemas · `backend/app/` API (ownership in `CLAUDE.md`) · `backend/tests/` · `frontend/src/` · `docs/spec.md` product spec · `docs/decisions.md` design log
+
+License: MIT (see `LICENSE`).

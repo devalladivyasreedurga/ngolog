@@ -167,8 +167,11 @@ def test_manual_mode_without_ai(client, no_ai, ngo, published_campaign):
     thread = upload(client, ngo, req_id, png("anything"), claim_id)
     assert "type the total" in thread["messages"][-2]["content"] or "type the total" in thread["messages"][-1]["content"]
     ev_id = thread["evidence"][0]["id"]
+    assert thread["claims"][0]["evidence_status"] == "submitted"
+    assert thread["request"]["clarification_rounds"] == 0  # waiting for a typed total is not a discrepancy
     thread = client.post(f"/api/evidence/{ev_id}/confirm-values", json={"total": 500}, headers=ngo).json()
     assert thread["claims"][0]["evidence_status"] == "consistent"
+    assert thread["request"]["clarification_rounds"] == 0
 
 
 def test_upload_rejects_non_documents(client, ngo, published_campaign):
