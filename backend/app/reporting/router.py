@@ -241,7 +241,7 @@ def add_manual_claim(request_id: str, body: ManualClaimIn, user: User = Depends(
     else:
         claim = ImpactClaim(campaign_id=c.id, activity_report_id=report.id, description=body.description, quantity=body.quantity, unit=body.unit, status=ClaimStatus.REPORTED, source="manual")
     db.add(claim)
-    if req.status == ReportingRequestStatus.OPEN:
+    if req.status in (ReportingRequestStatus.OPEN, ReportingRequestStatus.OVERDUE):
         req.status = ReportingRequestStatus.IN_REVIEW
     db.flush()
     audit(db, actor_type="user", actor_id=user.id, action="claim.manual_create", entity_type=f"{body.claim_type}_claim", entity_id=claim.id)

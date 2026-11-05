@@ -25,6 +25,7 @@ from contracts.reporting_schemas import (
     DonorUpdateOut,
     EvidenceVisibility,
     PublicationStatus,
+    ReportingRequestStatus,
     Role,
 )
 
@@ -48,6 +49,7 @@ class TimelineOut(BaseModel):
     campaign: CampaignOut
     entries: list[TimelineEntry]
     totals_note: str
+    reporting_overdue: bool
 
 
 class NotificationOut(BaseModel):
@@ -155,6 +157,7 @@ def timeline(campaign_id: str, user: User | None = Depends(optional_user), db: S
             "says it spent; document-supported spending is the part matched by reviewed documents. "
             "Neither is an audited account balance."
         ),
+        reporting_overdue=db.scalar(select(ReportingRequest.id).where(ReportingRequest.campaign_id == c.id, ReportingRequest.status == ReportingRequestStatus.OVERDUE).limit(1)) is not None,
     )
 
 

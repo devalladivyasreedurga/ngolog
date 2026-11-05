@@ -127,7 +127,7 @@ def open_reporting_request(db: Session, campaign: Campaign, *, cycle_key: str | 
 
 def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, user_id: str, text: str) -> None:
     say(db, req, text, MessageSender.NGO, user_id=user_id)
-    if req.status == ReportingRequestStatus.OPEN:
+    if req.status in (ReportingRequestStatus.OPEN, ReportingRequestStatus.OVERDUE):
         req.status = ReportingRequestStatus.IN_REVIEW
     open_inv = db.scalar(
         select(Investigation).where(Investigation.campaign_id == campaign.id, Investigation.status == InvestigationStatus.OPEN)

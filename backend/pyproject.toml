@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "ngolog-backend"
 version = "0.1.0"
@@ -21,7 +25,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=9"]
+dev = ["pytest>=9", "pillow>=11"]
+
+[tool.setuptools]
+py-modules = []  # dependencies only; the app runs from source
 
 [tool.pytest.ini_options]
 pythonpath = [".", ".."]

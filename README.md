@@ -45,6 +45,8 @@ Run tests: `cd backend && .venv/bin/python -m pytest -q`
 
 Sign in at `/signin` with the demo NGO or demo donor buttons (passwordless demo auth).
 
+Load the demo story: `backend/.venv/bin/python scripts/seed_demo.py`. It creates demo accounts, the school-supplies campaign, an overdue campaign and fictional receipts in `scripts/demo_assets/`. It creates no donations; demo money is always a real sandbox capture. Set `REVIEWER_EMAILS=reviewer@ngolog.org` to use the reviewer account.
+
 ### PayPal sandbox setup
 
 1. developer.paypal.com → Apps & Credentials → Sandbox → create an app; copy the client ID and secret into `.env` (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) and the client ID into `frontend/.env.local`.
@@ -64,7 +66,8 @@ Without `ANTHROPIC_API_KEY` the app runs in manual mode: the NGO enters claims a
 | LangGraph | Accountability workflow with interrupt/resume, one thread per reporting request |
 | Elastic | Campaign-scoped retrieval over reports and receipts, reused-receipt search (Postgres fallback) |
 | AG Grid Community | Accountability console: claims, evidence status, gaps, reporting requests, reviewer actions |
-| Planned | Render hosting, scheduler and reminders; Zapier MCP email delivery is stretch |
+| Render | Blueprint in `render.yaml`: API, web app, Postgres, disk for evidence uploads |
+| Planned | Zapier MCP email delivery (stretch); reminders are in-app today |
 
 ## Repository map
 

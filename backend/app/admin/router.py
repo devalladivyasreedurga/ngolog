@@ -24,6 +24,7 @@ from app.db.models import (
     ReportingRequest,
     User,
 )
+from app.reporting import jobs
 from contracts.reporting_schemas import InvestigationStatus, ReportingRequestStatus, Role
 
 router = APIRouter(prefix="/api/accountability", tags=["accountability"])
@@ -127,6 +128,14 @@ def _claim_row(db: Session, claim: ExpenseClaim | ImpactClaim, campaign: Campaig
         checks=[CheckRow(check_type=c.check_type, status=c.status, findings=c.findings_json, created_at=c.created_at) for c in checks],
         created_at=claim.created_at,
     )
+
+
+@router.post("/run-jobs")
+def run_jobs(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    """Reviewer/demo: run the scheduled follow-up and reminder jobs now."""
+    require_role(user, Role.REVIEWER)
+    result = jobs.run_all(db)
+    return {"opened": result.opened, "reminded": result.reminded, "overdue": result.overdue}
 
 
 @router.get("", response_model=ConsoleOut)

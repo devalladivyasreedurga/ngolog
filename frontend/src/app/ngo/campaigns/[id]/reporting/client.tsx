@@ -113,6 +113,7 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
 
 function Claims({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run }) {
   const [manual, setManual] = useState({ description: "", amount: "" });
+  const [activity, setActivity] = useState({ description: "", quantity: "", unit: "" });
   const live = thread.claims.filter((c) => c.status !== "withdrawn");
   return (
     <Card>
@@ -131,6 +132,20 @@ function Claims({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run
       >
         <input className={`${inputClass} flex-1`} required placeholder="Add an expense by hand" value={manual.description} onChange={(e) => setManual({ ...manual, description: e.target.value })} />
         <input className={`${inputClass} w-24`} required type="number" min="0.01" step="0.01" placeholder="$" value={manual.amount} onChange={(e) => setManual({ ...manual, amount: e.target.value })} />
+        <Button type="submit" variant="secondary" disabled={busy}>Add</Button>
+      </form>
+      <form
+        className="mt-2 flex flex-wrap gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const quantity = activity.quantity ? Number(activity.quantity) : null;
+          run(() => api<Thread>(`/api/reporting-requests/${thread.request.id}/claims`, { method: "POST", json: { claim_type: "impact", description: activity.description, quantity, unit: activity.unit || null } }));
+          setActivity({ description: "", quantity: "", unit: "" });
+        }}
+      >
+        <input className={`${inputClass} flex-1`} required placeholder="Add an activity by hand" value={activity.description} onChange={(e) => setActivity({ ...activity, description: e.target.value })} />
+        <input className={`${inputClass} w-20`} type="number" min="0" placeholder="Qty" value={activity.quantity} onChange={(e) => setActivity({ ...activity, quantity: e.target.value })} />
+        <input className={`${inputClass} w-20`} placeholder="Unit" value={activity.unit} onChange={(e) => setActivity({ ...activity, unit: e.target.value })} />
         <Button type="submit" variant="secondary" disabled={busy}>Add</Button>
       </form>
     </Card>

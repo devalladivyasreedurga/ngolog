@@ -48,6 +48,9 @@ export default function CampaignPage() {
       </div>
 
       <h2 className="mt-10 text-xl font-semibold">Transparency timeline</h2>
+      {timeline.reporting_overdue && (
+        <p className="mt-2 rounded-lg bg-stone-100 p-3 text-sm text-stone-700">No recent update has been provided.</p>
+      )}
       {timeline.entries.length === 0 && <p className="mt-2 text-stone-500">No updates published yet. Updates appear after the organization reviews and approves them.</p>}
       <ol className="mt-4 space-y-4">
         {timeline.entries.map(({ update, provenance }) => (

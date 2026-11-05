@@ -157,6 +157,7 @@ export interface Timeline {
   campaign: Campaign;
   entries: TimelineEntry[];
   totals_note: string;
+  reporting_overdue: boolean;
 }
 
 export interface NotificationItem {
