@@ -88,6 +88,8 @@ class CheckType(StrEnum):
     AMOUNT_MATCH = "amount_match"
     EXACT_DUPLICATE = "exact_duplicate"
     NEAR_DUPLICATE = "near_duplicate"
+    REUSED_RECEIPT = "reused_receipt"  # same receipt number elsewhere in this NGO
+    CONTEXT_RETRIEVAL = "context_retrieval"
     EXTRACTION = "extraction"
 
 

@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-opus-5-5"
 
+    # Elastic (optional). Without it, retrieval falls back to Postgres keyword search.
+    elastic_url: str = ""
+    elastic_api_key: str = ""
+    elastic_inference_id: str = ""  # e.g. an ELSER endpoint id; enables semantic_text search
+
     # Evidence storage
     upload_dir: Path = REPO_ROOT / "backend" / "uploads"
     max_upload_bytes: int = 10 * 1024 * 1024

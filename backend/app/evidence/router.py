@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent import runtime, workflow
+from app.agent import retrieval, runtime, workflow
 from app.agent.checks import find_exact_duplicates
 from app.agent.llm import AIUnavailable, get_ai
 from app.audit import audit
@@ -53,6 +53,17 @@ def sniff_type(data: bytes) -> str | None:
                 continue
             return mime
     return None
+
+
+def review_evidence(db: Session, req: ReportingRequest, ev: Evidence) -> None:
+    """Index the receipt summary and look for the same receipt number elsewhere in this NGO."""
+    db.flush()
+    hits, backend = retrieval.find_reused_receipts(db, ev)
+    already = db.scalar(select(EvidenceCheck).where(EvidenceCheck.evidence_id == ev.id, EvidenceCheck.check_type == CheckType.REUSED_RECEIPT))
+    if hits and already is None:
+        db.add(EvidenceCheck(evidence_id=ev.id, check_type=CheckType.REUSED_RECEIPT, status=CheckStatus.FLAG, findings_json={"backend": backend, "matches": [h.as_dict() for h in hits], "note": "Same receipt number already submitted. A lead for review, not proof of wrongdoing."}))
+        workflow.say(db, req, f"\"{ev.original_filename}\" has the same receipt number as a document submitted earlier ({hits[0].source_id[:8]}), so I won't count it again. If it's a different receipt, please check the number.", step="evaluate_evidence", evidence_id=ev.id)
+    retrieval.index(db, retrieval.doc_for_evidence(db, ev))
 
 
 class ConfirmValuesIn(BaseModel):
@@ -141,6 +152,7 @@ async def upload(
         else:
             workflow.say(db, req, f"I couldn't read \"{ev.original_filename}\" automatically. Please type the total shown on it.", step="request_more_information", evidence_id=ev.id)
 
+    review_evidence(db, req, ev)
     audit(db, actor_type="user", actor_id=user.id, action="evidence.upload", entity_type="evidence", entity_id=ev.id, new={"sha256": ev.sha256, "kind": kind, "claim_id": claim_id})
     db.flush()
     runtime.dispatch(db, req, {"type": "evidence", "evidence_id": ev.id})
@@ -162,7 +174,7 @@ def confirm_values(evidence_id: str, body: ConfirmValuesIn, user: User = Depends
         db.add(EvidenceCheck(evidence_id=ev.id, check_type=CheckType.EXTRACTION, status=CheckStatus.FLAG, findings_json={"note": "NGO-entered total differs from the total the AI read", "ai_total": ai_total, "ngo_total": body.total}))
     audit(db, actor_type="user", actor_id=user.id, action="evidence.confirm_values", entity_type="evidence", entity_id=ev.id, previous=previous, new=ev.confirmed_json)
     req = db.get(ReportingRequest, ev.reporting_request_id)
-    db.flush()
+    review_evidence(db, req, ev)
     runtime.dispatch(db, req, {"type": "evidence", "evidence_id": ev.id})
     db.commit()
     return build_thread(db, req, campaign)

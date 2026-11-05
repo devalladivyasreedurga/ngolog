@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import ClaimEvidence, Evidence, ExpenseClaim
-from contracts.reporting_schemas import EvidenceKind
+from app.db.models import ClaimEvidence, Evidence, EvidenceCheck, ExpenseClaim
+from contracts.reporting_schemas import CheckStatus, CheckType, EvidenceKind
 
 
 def effective_receipt_values(ev: Evidence) -> dict:
@@ -57,6 +57,14 @@ def linked_evidence(db: Session, claim_type: str, claim_id: str) -> list[Evidenc
 
 def compare_claim_evidence(db: Session, claim: ExpenseClaim) -> AmountComparison:
     result = AmountComparison(claim_cents=claim.amount_cents, documented_cents=0)
+    flagged = set(
+        db.scalars(
+            select(EvidenceCheck.evidence_id).where(
+                EvidenceCheck.status == CheckStatus.FLAG,
+                EvidenceCheck.check_type.in_([CheckType.EXACT_DUPLICATE, CheckType.REUSED_RECEIPT]),
+            )
+        )
+    )
     seen_hashes: set[str] = set()
     seen_numbers: set[str] = set()
     for ev in linked_evidence(db, "expense", claim.id):
@@ -64,7 +72,7 @@ def compare_claim_evidence(db: Session, claim: ExpenseClaim) -> AmountComparison
             continue
         values = effective_receipt_values(ev)
         number = (values.get("receipt_number") or "").strip().lower()
-        if ev.sha256 in seen_hashes or (number and number in seen_numbers):
+        if ev.id in flagged or ev.sha256 in seen_hashes or (number and number in seen_numbers):
             result.duplicate_evidence_ids.append(ev.id)
             continue
         seen_hashes.add(ev.sha256)

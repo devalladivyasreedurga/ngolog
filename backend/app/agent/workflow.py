@@ -22,6 +22,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agent import retrieval
 from app.agent.checks import compare_claim_evidence, linked_evidence, money
 from app.agent.llm import AIUnavailable, get_ai
 from app.audit import audit
@@ -141,6 +142,7 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
     report = ActivityReport(campaign_id=campaign.id, reporting_request_id=req.id, description=text)
     db.add(report)
     db.flush()
+    retrieval.index(db, retrieval.doc_for_report(db, report))
     ai = get_ai()
     if ai is None:
         say(db, req, "Thanks! Automatic reading is off right now, so please add each expense and activity with the form below.", mode="manual")
@@ -257,13 +259,33 @@ def evaluate_expense(db: Session, req: ReportingRequest, claim: ExpenseClaim) ->
         )
     else:
         claim.evidence_status = EvidenceReviewStatus.NEEDS_CLARIFICATION
-        question = _clarifying_question(claim, cmp)
+        question = _clarifying_question(claim, cmp) + _context_note(db, claim, cmp)
         if open_inv is None:
             db.add(Investigation(campaign_id=claim.campaign_id, claim_type="expense", claim_id=claim.id, question=question))
         else:
             open_inv.question = question
         _ask(db, req, question, claim.id)
     audit(db, actor_type="agent", actor_id=None, action="claim.evaluate", entity_type="expense_claim", entity_id=claim.id, previous={"evidence_status": previous}, new={"evidence_status": claim.evidence_status, **findings})
+
+
+def _context_note(db: Session, claim: ExpenseClaim, cmp) -> str:
+    """Retrieve earlier campaign records related to this claim (Elastic, or Postgres fallback)
+    and cite them by source id. Context for the NGO, never proof of anything."""
+    exclude = set(cmp.counted_evidence_ids) | set(cmp.duplicate_evidence_ids)
+    hits, backend = retrieval.search_campaign(db, claim.campaign_id, claim.description, k=2, exclude_source_ids=exclude)
+    db.add(
+        EvidenceCheck(
+            claim_type="expense",
+            claim_id=claim.id,
+            check_type=CheckType.CONTEXT_RETRIEVAL,
+            status=CheckStatus.PASS if hits else CheckStatus.INCONCLUSIVE,
+            findings_json={"backend": backend, "query": claim.description, "hits": [h.as_dict() for h in hits]},
+        )
+    )
+    if not hits:
+        return ""
+    cites = "; ".join(f"\"{h.snippet}\" [{h.source_type} {h.source_id[:8]}]" for h in hits)
+    return f"\n\nFor reference, earlier records for this campaign mention: {cites}"
 
 
 def _clarifying_question(claim: ExpenseClaim, cmp) -> str:

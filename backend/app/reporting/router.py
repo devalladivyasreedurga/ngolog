@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent import runtime, workflow
+from app.agent import retrieval, runtime, workflow
 from app.agent.checks import linked_evidence
 from app.audit import audit
 from app.auth.deps import current_user, load_campaign_for_editor, require_role
@@ -233,6 +233,7 @@ def add_manual_claim(request_id: str, body: ManualClaimIn, user: User = Depends(
         report = ActivityReport(campaign_id=c.id, reporting_request_id=req.id, description=body.description)
         db.add(report)
         db.flush()
+        retrieval.index(db, retrieval.doc_for_report(db, report))
     if body.claim_type == "expense":
         if body.amount is None:
             raise HTTPException(422, "Expense claims need an amount")

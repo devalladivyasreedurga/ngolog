@@ -20,13 +20,15 @@ Source of truth for product decisions: `docs/spec.md` (NGOLog v3.1 build spec). 
 
 ## Ownership
 
-| Area | Developer A: platform & experience | Developer B: agent & evidence |
-|---|---|---|
-| Backend | `app/auth`, `app/campaigns`, `app/payments`, `app/updates`, `app/admin`, migrations | `app/agent`, `app/evidence`, `app/reporting`, `app/notifications`, `integrations/` |
-| Frontend | campaign pages, donate flow, donor dashboard, AG Grid consoles | NGO reporting/conversation page, evidence upload UI |
-| Shared (PR reviewed by both) | `contracts/`, `backend/app/db/models.py`, `backend/migrations/` | same |
+Solo build: one developer owns everything. Keep `contracts/`, `backend/app/db/models.py` and migrations as the
+single source of truth for shared shapes, and mirror contract changes in `frontend/src/lib/contracts.ts`.
 
-Ask before editing the other developer's folders. Change shared files only in their own PR.
+## Where things live
+
+- `backend/app/agent/graph.py`: LangGraph workflow (one thread per reporting request, pauses at `await_ngo`); `runtime.py` starts/resumes it.
+- `backend/app/agent/workflow.py`: the step functions the graph calls; `checks.py`: deterministic money comparison.
+- `backend/app/agent/retrieval.py` + `integrations/elastic_retrieval.py`: Elastic RAG with Postgres fallback.
+- `backend/app/payments/`: PayPal only. `backend/app/updates/`: drafts, approval, publication, timeline.
 
 ## Commands
 

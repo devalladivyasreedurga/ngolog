@@ -4,6 +4,10 @@ Newest first. One line of decision, one line of why.
 
 ## 2026-11-04
 
+- **Solo build:** the two-developer split is dropped; scope ordered by judging value (Render, LangGraph, Elastic, AG Grid first; Zapier MCP is stretch).
+- **LangGraph runs one thread per reporting request**, paused at `await_ngo` and resumed by API events; checkpoints in Postgres (prod) or SQLite (local). The graph auto-drafts a donor update once every confirmed claim is settled and withdraws stale unpublished drafts.
+- **Elastic is optional at runtime:** every search is filtered to one campaign; cross-campaign checks only match exact receipt numbers within the same NGO. If Elastic is unset or errors, a Postgres keyword fallback answers instead and the check records which backend was used.
+- **Receipts flagged as exact duplicates or reused receipt numbers are never counted** toward a claim; the agent asks instead.
 - **v3.1 spec replaces the milestone/escrow plan.** No Payouts, escrow, refunds-on-failure or automated fraud verdicts. Earlier planning docs are historical only.
 - **Donation counts as received once the server-side capture returns COMPLETED (`captured`); the verified webhook upgrades it to `completed`.** The capture response comes from PayPal to our server, not from the browser, so it satisfies "frontend is not the source of truth", and local demos work without a public webhook URL. The donor page shows whether the webhook confirmed it.
 - **P0 agent runs as plain step functions in `app/agent/workflow.py`, named after the spec's graph nodes.** LangGraph (P1) will wrap the same functions with interrupt/resume; doing it first would have delayed the end-to-end slice.
