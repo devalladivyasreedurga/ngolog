@@ -205,7 +205,6 @@ def on_claim_confirmed(db: Session, req: ReportingRequest, claim: ExpenseClaim |
             step="request_more_information",
             claim_id=claim.id,
         )
-    _maybe_ready_for_draft(db, req)
 
 
 # ---------------------------------------------------------------- evaluate_evidence / clarify
@@ -265,7 +264,6 @@ def evaluate_expense(db: Session, req: ReportingRequest, claim: ExpenseClaim) ->
             open_inv.question = question
         _ask(db, req, question, claim.id)
     audit(db, actor_type="agent", actor_id=None, action="claim.evaluate", entity_type="expense_claim", entity_id=claim.id, previous={"evidence_status": previous}, new={"evidence_status": claim.evidence_status, **findings})
-    _maybe_ready_for_draft(db, req)
 
 
 def _clarifying_question(claim: ExpenseClaim, cmp) -> str:
@@ -303,7 +301,6 @@ def record_no_evidence(db: Session, req: ReportingRequest, claim: ExpenseClaim |
     claim.evidence_status = EvidenceReviewStatus.NOT_DOCUMENTED
     say(db, req, f"No document available: {explanation}", MessageSender.NGO, user_id=user_id, claim_id=claim.id)
     say(db, req, "Understood. Donors will see this as reported by you, not independently documented.", claim_id=claim.id)
-    _maybe_ready_for_draft(db, req)
 
 
 # ---------------------------------------------------------------- draft_update / queue_for_review
@@ -313,14 +310,13 @@ def _settled(status: str) -> bool:
     return status in (EvidenceReviewStatus.CONSISTENT, EvidenceReviewStatus.NOT_DOCUMENTED, EvidenceReviewStatus.REVIEWED_BY_HUMAN)
 
 
-def _maybe_ready_for_draft(db: Session, req: ReportingRequest) -> None:
+def is_ready_for_draft(db: Session, req: ReportingRequest) -> bool:
+    """Every confirmed expense is settled and nothing is waiting for NGO confirmation."""
     db.flush()
     expenses, impacts = claims_for_request(db, req)
     reported = [c for c in expenses if c.status == ClaimStatus.REPORTED]
     pending = [c for c in expenses + impacts if c.status == ClaimStatus.PROPOSED]
-    if reported and not pending and all(_settled(c.evidence_status) for c in reported):
-        if req.status in (ReportingRequestStatus.OPEN, ReportingRequestStatus.IN_REVIEW):
-            say(db, req, "Everything you reported has been reviewed. You can now generate a donor update draft to check before it's published.", step="ready_for_draft")
+    return bool(reported) and not pending and all(_settled(c.evidence_status) for c in reported)
 
 
 def draft_donor_update(db: Session, campaign: Campaign, req: ReportingRequest | None) -> DonorUpdate:

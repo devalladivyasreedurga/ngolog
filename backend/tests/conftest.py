@@ -25,6 +25,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 from app.agent.llm import set_ai_provider  # noqa: E402
+from app.agent.runtime import set_checkpointer  # noqa: E402
+from langgraph.checkpoint.memory import InMemorySaver  # noqa: E402
 from app.db.base import Base, get_db, make_engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.payments.paypal_client import set_paypal_transport  # noqa: E402
@@ -157,6 +159,7 @@ def client(tmp_path):
             db.close()
 
     app.dependency_overrides[get_db] = _db
+    set_checkpointer(InMemorySaver())
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

@@ -65,7 +65,7 @@ export default function Updates() {
       <ErrorText error={error} />
       <div className="mt-6 space-y-4">
         {entries.length === 0 && <p className="text-stone-500">No drafts yet.</p>}
-        {entries.map(({ update, provenance }) => (
+        {entries.filter((e) => e.update.status !== "withdrawn").map(({ update, provenance }) => (
           <Card key={update.id}>
             <div className="flex flex-wrap items-center gap-3">
               <h2 className="font-semibold">{update.title}</h2>

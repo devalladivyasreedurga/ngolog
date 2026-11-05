@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent import workflow
+from app.agent import runtime, workflow
 from app.agent.checks import find_exact_duplicates
 from app.agent.llm import AIUnavailable, get_ai
 from app.audit import audit
@@ -64,14 +64,6 @@ class ConfirmValuesIn(BaseModel):
 
 class VisibilityIn(BaseModel):
     visibility: EvidenceVisibility
-
-
-def _evaluate_linked_claims(db: Session, req: ReportingRequest, evidence: Evidence) -> None:
-    for link in db.scalars(select(ClaimEvidence).where(ClaimEvidence.evidence_id == evidence.id)):
-        if link.claim_type == "expense":
-            claim = db.get(ExpenseClaim, link.claim_id)
-            if claim and claim.status == ClaimStatus.REPORTED:
-                workflow.evaluate_expense(db, req, claim)
 
 
 @router.post("/upload", response_model=ThreadOut)
@@ -151,7 +143,7 @@ async def upload(
 
     audit(db, actor_type="user", actor_id=user.id, action="evidence.upload", entity_type="evidence", entity_id=ev.id, new={"sha256": ev.sha256, "kind": kind, "claim_id": claim_id})
     db.flush()
-    _evaluate_linked_claims(db, req, ev)
+    runtime.dispatch(db, req, {"type": "evidence", "evidence_id": ev.id})
     db.commit()
     return build_thread(db, req, campaign)
 
@@ -171,7 +163,7 @@ def confirm_values(evidence_id: str, body: ConfirmValuesIn, user: User = Depends
     audit(db, actor_type="user", actor_id=user.id, action="evidence.confirm_values", entity_type="evidence", entity_id=ev.id, previous=previous, new=ev.confirmed_json)
     req = db.get(ReportingRequest, ev.reporting_request_id)
     db.flush()
-    _evaluate_linked_claims(db, req, ev)
+    runtime.dispatch(db, req, {"type": "evidence", "evidence_id": ev.id})
     db.commit()
     return build_thread(db, req, campaign)
 

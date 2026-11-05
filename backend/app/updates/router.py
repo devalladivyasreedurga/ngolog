@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent import workflow
+from app.agent import runtime, workflow
 from app.audit import audit
 from app.auth.deps import current_user, load_campaign_for_editor, optional_user, require_role
 from app.campaigns.router import CampaignOut, campaign_out
@@ -126,6 +126,8 @@ def publish(update_id: str, user: User = Depends(current_user), db: Session = De
         raise HTTPException(409, "Approve the update before publishing")
     _assert_refs_publishable(db, u)
     workflow.mark_published(db, u)
+    if u.reporting_request_id:
+        runtime.dispatch(db, db.get(ReportingRequest, u.reporting_request_id), {"type": "close"})
     # In-app notifications now; email delivery goes through the outbox (Zapier MCP, P1).
     for sub in db.scalars(select(NotificationSubscription).where(NotificationSubscription.campaign_id == c.id)):
         key = f"update:{u.id}:donor:{sub.donor_user_id}:in_app"

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agent import workflow
+from app.agent import runtime, workflow
 from app.agent.checks import linked_evidence
 from app.audit import audit
 from app.auth.deps import current_user, load_campaign_for_editor, require_role
@@ -203,6 +203,7 @@ def trigger(campaign_id: str, body: TriggerIn, user: User = Depends(current_user
     if c.status != CampaignStatus.PUBLISHED:
         raise HTTPException(409, "Publish the campaign first")
     req, _ = workflow.open_reporting_request(db, c, cycle_key=body.cycle_key, actor_id=user.id)
+    runtime.start_cycle(db, req)
     db.commit()
     return build_thread(db, req, c)
 
@@ -218,7 +219,7 @@ def post_message(request_id: str, body: MessageIn, user: User = Depends(current_
     req, c = load_request_for_editor(db, user, request_id)
     if req.status in (ReportingRequestStatus.COMPLETED,):
         raise HTTPException(409, "This reporting cycle is closed")
-    workflow.handle_ngo_message(db, req, c, user.id, body.content)
+    runtime.dispatch(db, req, {"type": "message", "user_id": user.id, "text": body.content})
     db.commit()
     return build_thread(db, req, c)
 
@@ -243,7 +244,7 @@ def add_manual_claim(request_id: str, body: ManualClaimIn, user: User = Depends(
         req.status = ReportingRequestStatus.IN_REVIEW
     db.flush()
     audit(db, actor_type="user", actor_id=user.id, action="claim.manual_create", entity_type=f"{body.claim_type}_claim", entity_id=claim.id)
-    workflow.on_claim_confirmed(db, req, claim)
+    runtime.dispatch(db, req, {"type": "claim_confirmed", "claim_type": body.claim_type, "claim_id": claim.id})
     db.commit()
     return build_thread(db, req, c)
 
@@ -261,7 +262,7 @@ def confirm_claim(claim_type: str, claim_id: str, body: ConfirmIn, user: User = 
             claim.amount_uncertain = False
     claim.status = ClaimStatus.REPORTED
     audit(db, actor_type="user", actor_id=user.id, action="claim.confirm", entity_type=f"{claim_type}_claim", entity_id=claim.id, previous=before, new={"status": claim.status})
-    workflow.on_claim_confirmed(db, req, claim)
+    runtime.dispatch(db, req, {"type": "claim_confirmed", "claim_type": claim_type, "claim_id": claim.id})
     db.commit()
     return build_thread(db, req, db.get(Campaign, claim.campaign_id))
 
@@ -280,7 +281,7 @@ def no_evidence(claim_type: str, claim_id: str, body: NoEvidenceIn, user: User =
     claim, req = load_claim(db, user, claim_type, claim_id)
     if claim.status != ClaimStatus.REPORTED:
         raise HTTPException(409, "Confirm the claim first")
-    workflow.record_no_evidence(db, req, claim, body.explanation, user.id)
+    runtime.dispatch(db, req, {"type": "no_evidence", "claim_type": claim_type, "claim_id": claim.id, "explanation": body.explanation, "user_id": user.id})
     db.commit()
     return build_thread(db, req, db.get(Campaign, claim.campaign_id))
 
