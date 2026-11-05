@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.admin.router import router as admin_router
 from app.auth.router import router as auth_router
 from app.campaigns.router import router as campaigns_router
 from app.config import get_settings
@@ -22,7 +23,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-for r in (auth_router, campaigns_router, payments_router, reporting_router, evidence_router, updates_router):
+for r in (auth_router, campaigns_router, payments_router, reporting_router, evidence_router, updates_router, admin_router):
     app.include_router(r)
 
 

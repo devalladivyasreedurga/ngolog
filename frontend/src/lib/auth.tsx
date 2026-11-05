@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { api, getToken, setToken } from "./api";
+import { api, ApiError, getToken, setToken } from "./api";
 import type { Role, User } from "./contracts";
 
 interface AuthState {
@@ -19,7 +19,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const check = getToken()
-      ? api<User>("/api/auth/me").then(setUser).catch(() => setToken(null))
+      ? api<User>("/api/auth/me")
+          .then(setUser)
+          .catch((e) => {
+            // Only a rejected token signs you out; a backend restart must not.
+            if (e instanceof ApiError && e.status === 401) setToken(null);
+          })
       : Promise.resolve();
     check.finally(() => setReady(true));
   }, []);

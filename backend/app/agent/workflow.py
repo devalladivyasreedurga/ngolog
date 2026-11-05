@@ -272,7 +272,9 @@ def _context_note(db: Session, claim: ExpenseClaim, cmp) -> str:
     """Retrieve earlier campaign records related to this claim (Elastic, or Postgres fallback)
     and cite them by source id. Context for the NGO, never proof of anything."""
     exclude = set(cmp.counted_evidence_ids) | set(cmp.duplicate_evidence_ids)
-    hits, backend = retrieval.search_campaign(db, claim.campaign_id, claim.description, k=2, exclude_source_ids=exclude)
+    hits, backend = retrieval.search_campaign(db, claim.campaign_id, claim.description, k=3, exclude_source_ids=exclude)
+    # A record that only repeats the claim adds nothing for the NGO.
+    hits = [h for h in hits if h.snippet.strip().lower() != claim.description.strip().lower()][:2]
     db.add(
         EvidenceCheck(
             claim_type="expense",

@@ -22,7 +22,7 @@ export default function SignIn() {
     setError(null);
     try {
       const user = await signIn(e, r);
-      router.push(user.role === "ngo_admin" ? "/ngo/dashboard" : user.role === "donor" ? "/donor/dashboard" : "/");
+      router.push(user.role === "ngo_admin" ? "/ngo/dashboard" : user.role === "donor" ? "/donor/dashboard" : "/accountability");
     } catch (err) {
       setError((err as Error).message);
     }

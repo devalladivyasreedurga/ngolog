@@ -61,7 +61,10 @@ Without `ANTHROPIC_API_KEY` the app runs in manual mode: the NGO enters claims a
 | Claude (`claude-opus-5-5`) | Reporting-plan drafting, claim extraction from NGO messages, receipt reading (structured outputs) |
 | FastAPI, SQLAlchemy, Alembic, Postgres/SQLite | API, ledger of donations/claims/evidence, audit log |
 | Next.js 16 | Campaign, donor and NGO pages |
-| Planned (P1) | LangGraph interrupt/resume, Elastic RAG + duplicate search, Zapier MCP email delivery, AG Grid console, Render hosting |
+| LangGraph | Accountability workflow with interrupt/resume, one thread per reporting request |
+| Elastic | Campaign-scoped retrieval over reports and receipts, reused-receipt search (Postgres fallback) |
+| AG Grid Community | Accountability console: claims, evidence status, gaps, reporting requests, reviewer actions |
+| Planned | Render hosting, scheduler and reminders; Zapier MCP email delivery is stretch |
 
 ## Repository map
 

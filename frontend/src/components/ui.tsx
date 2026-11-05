@@ -68,6 +68,11 @@ export function Nav() {
             NGO dashboard
           </Link>
         )}
+        {(user?.role === "ngo_admin" || user?.role === "reviewer") && (
+          <Link href="/accountability" className="text-stone-700 hover:underline">
+            Accountability
+          </Link>
+        )}
         {user?.role === "donor" && (
           <Link href="/donor/dashboard" className="text-stone-700 hover:underline">
             My donations
