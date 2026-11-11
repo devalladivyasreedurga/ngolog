@@ -202,4 +202,7 @@ def get_file(evidence_id: str, user: User | None = Depends(optional_user), db: S
         if user is None:
             raise HTTPException(404, "Evidence not found")
         load_campaign_for_editor(db, user, ev.campaign_id)
-    return FileResponse(get_settings().upload_dir / ev.storage_key, media_type=ev.file_type)
+    path = get_settings().upload_dir / ev.storage_key
+    if not path.is_file():
+        raise HTTPException(404, "This file is no longer stored on the server")
+    return FileResponse(path, media_type=ev.file_type)

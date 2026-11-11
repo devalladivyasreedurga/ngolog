@@ -2,6 +2,11 @@
 
 Newest first. One line of decision, one line of why.
 
+## 2026-11-10
+
+- **Hosting is free-tier only** (no card): Render free web services for the API and website, Neon free Postgres. Known limits are written at the top of `render.yaml`: sleep on idle, uploaded evidence files are lost on restart (extracted values stay in Postgres), scheduler runs only while awake. Chosen over paying ~$13/mo because the user preferred not to spend; the hackathon also accepts run instructions instead of a hosted URL.
+- **Connection pooling off for Neon:** use the direct connection string; psycopg prepared statements and LangGraph's saver misbehave behind a transaction-mode pooler.
+
 ## 2026-11-04
 
 - **Solo build:** the two-developer split is dropped; scope ordered by judging value (Render, LangGraph, Elastic, AG Grid first; Zapier MCP is stretch).

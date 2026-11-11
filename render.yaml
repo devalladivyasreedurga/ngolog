@@ -1,44 +1,34 @@
-# Render Blueprint. The API and database are paid on purpose: the API must not sleep
-# (PayPal webhooks) and the database must not expire before judging ends (Dec 15).
-# The web app is free. Prices checked on render.com/pricing 2026-11-10: web $7/mo,
-# Postgres $6/mo, disk $0.25/GB/mo. If Render rejects a plan name, use the new-style
-# ids shown on its pricing page (e.g. 0.5c-512mb, 0.1c-256mb).
-databases:
-  - name: ngolog-db
-    plan: basic-256mb
-    databaseName: ngolog
-    user: ngolog
-
+# Render Blueprint, free plans only (no card needed). Database: Neon free Postgres
+# (neon.com), pasted in as DATABASE_URL, because Render's free databases expire.
+#
+# Free-plan behavior to know about:
+# - Services sleep after ~15 min idle; the first request then takes up to a minute.
+# - The disk is wiped on every sleep/redeploy, so uploaded evidence FILES disappear.
+#   Extracted receipt values, claims and checks live in Postgres and are kept.
+# - The in-app scheduler only runs while the API is awake; reviewers can run the jobs
+#   from the console (POST /api/accountability/run-jobs).
 services:
   - type: web
     name: ngolog-api
     runtime: python
-    plan: starter
+    plan: free
     buildCommand: pip install ./backend
     startCommand: cd backend && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
-    disk:  # evidence uploads must survive deploys
-      name: uploads
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.1
-      - key: DATABASE_URL
-        fromDatabase:
-          name: ngolog-db
-          property: connectionString
+      - key: DATABASE_URL  # Neon connection string (direct, not pooled)
+        sync: false
       - key: SECRET_KEY
         generateValue: true
-      - key: UPLOAD_DIR
-        value: /var/data/uploads
       - key: SCHEDULER_ENABLED
         value: "true"
       - key: REVIEWER_EMAILS
         value: reviewer@ngolog.org
       - key: PUBLIC_APP_URL
         sync: false
-      - key: CORS_ORIGINS  # the ngolog-web URL
+      - key: CORS_ORIGINS  # the ngolog-web URL, no trailing slash
         sync: false
       - key: PAYPAL_CLIENT_ID
         sync: false
@@ -48,20 +38,18 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
-      - key: ELASTIC_URL
-        sync: false
-      - key: ELASTIC_API_KEY
-        sync: false
 
   - type: web
     name: ngolog-web
     runtime: node
-    plan: free  # sleeps when idle (slow first visit); the API and database stay on paid plans
+    plan: free
     rootDir: frontend
     buildCommand: npm ci && npm run build
     startCommand: npm run start
     envVars:
-      - key: NEXT_PUBLIC_API_URL  # the ngolog-api URL; read at build time
+      - key: NODE_VERSION
+        value: 22
+      - key: NEXT_PUBLIC_API_URL  # the ngolog-api URL; baked in at build time, redeploy after changing
         sync: false
       - key: NEXT_PUBLIC_PAYPAL_CLIENT_ID
         sync: false

@@ -26,7 +26,10 @@ def utcnow() -> datetime:
 
 
 def make_engine(url: str):
-    kwargs = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {}
+    if url.startswith("sqlite"):
+        kwargs = {"connect_args": {"check_same_thread": False}}
+    else:
+        kwargs = {"pool_pre_ping": True, "pool_recycle": 300}  # serverless Postgres drops idle connections
     return create_engine(url, **kwargs)
 
 

@@ -29,7 +29,13 @@ def _make_checkpointer() -> BaseCheckpointSaver:
         from psycopg_pool import ConnectionPool
 
         conninfo = url.replace("postgresql+psycopg://", "postgresql://", 1)
-        pool = ConnectionPool(conninfo, max_size=5, kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row})
+        pool = ConnectionPool(
+            conninfo,
+            max_size=5,
+            kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+            check=ConnectionPool.check_connection,  # drop connections the host closed while idle
+            max_idle=240,
+        )
         saver = PostgresSaver(pool)
         saver.setup()
         return saver
