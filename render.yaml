@@ -1,6 +1,8 @@
-# Render Blueprint. Paid plans on purpose: the demo must stay up and keep its data
-# through judging (Dec 15), and free services sleep. Check current plan names and
-# prices on render.com before applying.
+# Render Blueprint. The API and database are paid on purpose: the API must not sleep
+# (PayPal webhooks) and the database must not expire before judging ends (Dec 15).
+# The web app is free. Prices checked on render.com/pricing 2026-11-10: web $7/mo,
+# Postgres $6/mo, disk $0.25/GB/mo. If Render rejects a plan name, use the new-style
+# ids shown on its pricing page (e.g. 0.5c-512mb, 0.1c-256mb).
 databases:
   - name: ngolog-db
     plan: basic-256mb
@@ -54,7 +56,7 @@ services:
   - type: web
     name: ngolog-web
     runtime: node
-    plan: starter
+    plan: free  # sleeps when idle (slow first visit); the API and database stay on paid plans
     rootDir: frontend
     buildCommand: npm ci && npm run build
     startCommand: npm run start
