@@ -10,3 +10,4 @@ frontend/.next/
 .DS_Store
 *.checkpoints.sqlite
 .claude/
+docs/demo-script.md

@@ -10,6 +10,21 @@ donor updates. Nothing reaches donors until the NGO approves it.
 NGOLog does **not** hold funds, release payouts or declare fraud. "Consistent" means documents match what the NGO
 reported; it is not an audit.
 
+## Try it (for judges)
+
+**Live demo:** https://ngolog-web.onrender.com (API: https://ngolog-api.onrender.com)
+
+The demo runs on free hosting, so after idle time the first load can take up to a minute while the services wake. Everything runs against the PayPal **sandbox** only; no real money moves.
+
+1. **Donor:** open `/signin` and click **Demo donor**, open *Supply 50 students with school kits*, click the PayPal **Donate** button and pay with any PayPal sandbox personal (buyer) account. Create one at developer.paypal.com under Sandbox → Accounts if you don't have one. The campaign total updates from the server-side capture, and *My donations* shows whether PayPal's signed webhook confirmed it.
+2. **NGO:** sign out, click **Demo NGO**, open **Reporting** on the campaign and press **Run follow-up now (demo)**. Reply in plain words (for example "We bought 25 kits from Demo Stationers for $500 and handed out 20."), confirm the proposed claims, then upload the fictional receipts from `scripts/demo_assets/` (`receipt-420.png`, then `receipt-80.png`). The $420 receipt raises a question about the $80 gap; the $80 receipt reconciles it and a donor update is drafted. Approve and publish it from **Donor updates**.
+3. **Public timeline:** the campaign page now shows the published update, with reported spending and document-supported spending kept separate.
+4. **Reviewer:** on `/signin` choose *Platform reviewer* with the email `reviewer@ngolog.org` to open the **Accountability** console (AG Grid) and see every campaign, open question and overdue request. The *Restock the village reading room* campaign is seeded as overdue.
+
+What NGOLog does not do, on purpose: it holds no funds, pays no one, and never declares anyone fraudulent. "Consistent" means the documents match what the NGO reported, not that anything was audited.
+
+Known limits of the free demo: uploaded receipt files are cleared when the server restarts (the amounts, claims and checks are kept in the database), and Elastic search runs through its built-in Postgres fallback unless `ELASTIC_URL` is set.
+
 ## What works today (P0 vertical slice)
 
 1. NGO creates a campaign; a reporting plan is drafted (Claude, or a template in manual mode), edited and accepted, then the campaign is published.
