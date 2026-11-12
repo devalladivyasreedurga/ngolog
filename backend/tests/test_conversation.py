@@ -91,7 +91,7 @@ def test_gap_question_is_short_and_offers_one_tap_fix(client, ai, ngo, published
     thread = upload(client, ngo, req_id, png("TOTAL=420"), claim["id"])
     q = agent_msgs(thread)[-1]
     assert "$80.00" in q["content"] and q["content"].count("?") == 1 and len(q["content"]) < 170
-    assert action_kinds(q) == ["upload", "set_amount"]
+    assert action_kinds(q) == ["upload", "set_amount", "no_evidence"]
     fix = q["meta"]["actions"][1]
     assert fix["amount"] == 420.0 and "$420.00" in fix["label"]
 
@@ -273,3 +273,48 @@ def test_a_question_during_a_receipt_gap_is_not_recorded_as_an_explanation(clien
     assert "NGO reply" not in (open_inv.get("resolution") or "")
     thread = say(client, ngo, req_id, "The supplier gave us a discount.")  # a real explanation is still noted
     assert "noted that" in agent_msgs(thread)[-1]["content"]
+
+
+def _gap(client, ai, ngo, cid):
+    req_id = open_request(client, ngo, cid)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    claim = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()["claims"][0]
+    thread = upload(client, ngo, req_id, png("TOTAL=420 NO=F6"), claim["id"])
+    return req_id, claim, thread
+
+
+def test_an_explanation_keeps_the_buttons_so_the_ngo_is_not_stuck(client, ai, ngo, published_campaign):
+    req_id, claim, gap = _gap(client, ai, ngo, published_campaign)
+    thread = say(client, ngo, req_id, "The supplier gave us a discount.")
+    last = agent_msgs(thread)[-1]
+    assert "noted that" in last["content"] and last["meta"]["awaiting"] == "ask_clarification"
+    assert action_kinds(last) == action_kinds(gap and agent_msgs(gap)[-1])
+
+
+def test_typing_no_doc_closes_the_receipt_question_as_not_documented(client, ai, ngo, published_campaign):
+    req_id, claim, _ = _gap(client, ai, ngo, published_campaign)
+    thread = say(client, ngo, req_id, "no doc")
+    assert thread["claims"][0]["evidence_status"] == "not_documented"
+    last = agent_msgs(thread)[-1]
+    assert "reported by you, not documented" in last["content"] and "fraud" not in last["content"].lower()
+    assert sum(1 for m in thread["messages"] if m["sender_role"] == "ngo" and m["content"] == "no doc") == 1  # not echoed twice
+
+
+def test_a_new_expense_during_a_receipt_question_is_not_swallowed(client, ai, ngo, published_campaign):
+    req_id, claim, _ = _gap(client, ai, ngo, published_campaign)
+    thread = say(client, ngo, req_id, "We also bought 10 pens for $30.")
+    proposed = [c for c in thread["claims"] if c["status"] == "proposed"]
+    assert [c["amount_cents"] for c in proposed] == [3000]
+    assert agent_msgs(thread)[-1]["meta"]["awaiting"] == "confirm_claims"
+
+
+def test_the_earlier_receipt_gap_comes_back_after_a_new_expense_is_confirmed(client, ai, ngo, published_campaign):
+    req_id, claim, _ = _gap(client, ai, ngo, published_campaign)
+    say(client, ngo, req_id, "We also bought 10 pens for $30.")
+    thread = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()
+    last = agent_msgs(thread)[-1]
+    assert "$80.00" in last["content"] and last["meta"]["awaiting"] == "ask_clarification"  # the open gap, not forgotten
+    assert "no_evidence" in action_kinds(last) and "upload" in action_kinds(last)
+    thread = client.post(f"/api/claims/expense/{claim['id']}/no-evidence", json={"explanation": "No more receipts."}, headers=ngo).json()
+    last = agent_msgs(thread)[-1]
+    assert "$30.00" in last["content"] and last["meta"]["awaiting"] == "ask_receipt"  # then the new expense

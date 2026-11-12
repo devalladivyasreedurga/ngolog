@@ -213,6 +213,14 @@ def next_receipt_prompt(db: Session, req: ReportingRequest) -> tuple[str, dict] 
     for c in expenses:
         if c.status == ClaimStatus.REPORTED and c.evidence_status == EvidenceReviewStatus.REPORTED and not linked_evidence(db, "expense", c.id):
             return _receipt_prompt(c)
+        if c.status == ClaimStatus.REPORTED and c.evidence_status == EvidenceReviewStatus.NEEDS_CLARIFICATION:
+            inv = db.scalar(select(Investigation).where(Investigation.claim_id == c.id, Investigation.status == InvestigationStatus.OPEN))
+            if inv is not None:  # an earlier receipt gap is still open: bring it back instead of leaving the draft stuck
+                actions = [
+                    {"kind": "upload", "label": "Upload another receipt", "claim_type": "expense", "claim_id": c.id},
+                    {"kind": "no_evidence", "label": "No more receipts", "claim_type": "expense", "claim_id": c.id},
+                ]
+                return inv.question, {"step": "clarify", "awaiting": "ask_clarification", "claim_id": c.id, "actions": actions}
     return None
 
 
@@ -259,6 +267,10 @@ def reject_proposed(db: Session, req: ReportingRequest, user_id: str) -> None:
 # ---------------------------------------------------------------- interpret / extract
 
 
+NEW_REPORT_WORDS = re.compile(r"\b(also|another|bought|purchased|spent|paid|handed out|distributed|gave out)\b", re.I)
+NO_DOCUMENT_WORDS = re.compile(
+    r"\b(no (more )?(docs?|documents?|receipts?|invoices?|proof)|(don'?t|do not|dont) have|can'?t (find|provide|get)|cannot (find|provide)|lost (it|the))\b", re.I
+)
 NOTHING_TO_REPORT = "No problem. There's nothing to report yet. Start an update again whenever you have something."
 
 
@@ -338,21 +350,26 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
     open_inv = db.scalar(
         select(Investigation).where(Investigation.campaign_id == campaign.id, Investigation.status == InvestigationStatus.OPEN)
     )
-    if open_inv is not None and awaiting not in ("confirm_claims", "ask_delivery", "ask_spend"):
+    looks_new = bool(NEW_REPORT_WORDS.search(text) and re.search(r"\d", text))  # "we also bought 2 notebooks"
+    if open_inv is not None and awaiting == "ask_clarification" and not looks_new:
+        keep = {"awaiting": awaiting, "actions": wmeta.get("actions", []), "claim_id": wmeta.get("claim_id")}
         if text.strip().endswith("?"):  # a question, not an explanation: say what this chat is for
             say(
                 db,
                 req,
                 "I can only help with your spending update, so I can't answer that. For the open question, upload a document or tell me what explains the difference.",
                 step="off_topic",
-                awaiting=awaiting,
-                actions=wmeta.get("actions", []),
+                **keep,
             )
+            return
+        claim = db.get(ExpenseClaim, wmeta["claim_id"]) if wmeta.get("claim_id") else None
+        if claim is not None and NO_DOCUMENT_WORDS.search(text):  # "no doc", "I don't have one"
+            record_no_evidence(db, req, claim, text, user_id, echo=False)
             return
         # A reply to a clarification question: record it on the investigation; numbers
         # only change when evidence or a confirmed claim changes.
         open_inv.resolution = ((open_inv.resolution or "") + f"\nNGO reply: {text}").strip()
-        say(db, req, "Thanks, I've noted that. If you have a document for the difference, upload it and I'll re-check.")
+        say(db, req, "Thanks, I've noted that. Upload a document and I'll re-check, or tell me if there isn't one.", step="note_reply", **keep)
         return
 
     ai = get_ai()
@@ -396,6 +413,9 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
         say(db, req, f"How much did {missing_amount[0]} cost?", step="ask_amount", awaiting="ask_amount", description=missing_amount[0])
         return
     if not _proposed(db, req):
+        if open_inv is not None and awaiting == "ask_clarification":  # still on the receipt question
+            say(db, req, "Thanks, I've noted that. Upload a document and I'll re-check, or tell me if there isn't one.", step="note_reply", awaiting=awaiting, actions=wmeta.get("actions", []), claim_id=wmeta.get("claim_id"))
+            return
         say(db, req, "I didn't catch anything spent or done yet. What did you spend campaign money on?", step="open", awaiting="ask_spend")
         return
     propose_summary(db, req)
@@ -472,6 +492,7 @@ def evaluate_expense(db: Session, req: ReportingRequest, claim: ExpenseClaim) ->
         actions = [{"kind": "upload", "label": "Upload another receipt", "claim_type": "expense", "claim_id": claim.id}]
         if cmp.gap_cents > 0 and cmp.documented_cents > 0 and not cmp.currency_mismatch_ids:
             actions.append({"kind": "set_amount", "label": f"It was an estimate: use {money(cmp.documented_cents, claim.currency)}", "claim_type": "expense", "claim_id": claim.id, "amount": cmp.documented_cents / 100})
+        actions.append({"kind": "no_evidence", "label": "No more receipts", "claim_type": "expense", "claim_id": claim.id})
         if open_inv is None:
             db.add(Investigation(campaign_id=claim.campaign_id, claim_type="expense", claim_id=claim.id, question=question))
         else:
@@ -533,9 +554,10 @@ def _ask(db: Session, req: ReportingRequest, question: str, claim_id: str, actio
     say(db, req, question, step="clarify", awaiting="ask_clarification", claim_id=claim_id, actions=actions or [])
 
 
-def record_no_evidence(db: Session, req: ReportingRequest, claim: ExpenseClaim | ImpactClaim, explanation: str, user_id: str) -> None:
+def record_no_evidence(db: Session, req: ReportingRequest, claim: ExpenseClaim | ImpactClaim, explanation: str, user_id: str, echo: bool = True) -> None:
     claim.evidence_status = EvidenceReviewStatus.NOT_DOCUMENTED
-    say(db, req, explanation, MessageSender.NGO, user_id=user_id, claim_id=claim.id)
+    if echo:  # typed replies are already in the chat
+        say(db, req, explanation, MessageSender.NGO, user_id=user_id, claim_id=claim.id)
     db.flush()
     text = "Understood. Donors will see this as reported by you, not documented."
     meta: dict = {"claim_id": claim.id}
