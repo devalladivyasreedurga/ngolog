@@ -368,7 +368,7 @@ def photo_received(db: Session, req: ReportingRequest, filename: str, duplicate:
     wmeta = (last_agent.meta_json or {}) if last_agent else {}
     awaiting = wmeta.get("awaiting")
     prompt = wmeta.get("prompt") or (_strip_notes(last_agent.content) if last_agent and awaiting else "")
-    head = "That photo is identical to one already added, so I didn't add it again." if duplicate else "Thanks, photo added. It's kept with your update."
+    head = "That photo is identical to one already added, so I didn't add it again." if duplicate else "Thanks, photo added. Donors will see it in your update; you can untick it under Documents."
     say(db, req, f"{head}" + (f" {prompt}" if prompt else ""), step="photo_received", prompt=prompt, **_held_meta(wmeta))
 
 

@@ -31,3 +31,7 @@ While a receipt question is open, Claude labels the NGO's reply (explanation, no
 The label only routes the chat. It never sets an evidence status: a `no_document` label makes the assistant ask
 "Should I mark it as not documented?" and the claim changes only after the NGO taps yes (or types yes). The earlier
 keyword patterns remain only as a fallback when there is no API key or the call fails.
+
+## Donor update: summary first, photos shared by default
+
+The update card shows three tiles (reported spending, matched by receipts, activities reported), one sentence and any shared photos. Per-item rows and receipt links sit behind "See the details". Photos added through the chat are shared with donors by default, because the NGO adds them to show donors; the NGO sees them in the preview and can untick them under Documents, and the "Add photos" note says so. Receipts stay private unless the NGO shares them. Photos are shown as "not receipts" and never change a claim's status.

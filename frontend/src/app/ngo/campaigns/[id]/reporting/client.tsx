@@ -124,7 +124,9 @@ export default function Reporting() {
     <Page>
       <Link href="/ngo/dashboard" className="text-sm text-emerald-800 hover:underline">← Your campaigns</Link>
       <div className="mt-2 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">{title ?? thread?.campaign_title ?? "Spending updates"}</h1>
+        <h1 className="text-2xl font-semibold">
+          <Link href={`/campaigns/${id}`} title="View the public campaign page" className="hover:text-emerald-800 hover:underline">{title ?? thread?.campaign_title ?? "Spending updates"}</Link>
+        </h1>
         {thread && funded !== false && (
           <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${PILL[thread.request.status] ?? "bg-stone-100 text-stone-700"}`}>
             {ROUND_STATUS[thread.request.status] ?? thread.request.status}
@@ -155,12 +157,16 @@ export default function Reporting() {
         </p>
       ) : (
         <>
-        <Steps thread={thread} />
-        <div className="mt-4 grid gap-4 lg:grid-cols-5">
-          <Conversation thread={thread} busy={busy} run={run} />
+        <Steps thread={thread} campaignId={id} />
+        <div className="mt-4 grid items-start gap-4 lg:grid-cols-5">
+          <div id="chat" className="scroll-mt-4 lg:sticky lg:top-4 lg:col-span-3">
+            <Conversation thread={thread} busy={busy} run={run} />
+          </div>
           <div className="space-y-4 lg:col-span-2">
             <Claims thread={thread} busy={busy} run={run} />
-            <EvidenceList thread={thread} busy={busy} run={run} />
+            <div id="documents" className="scroll-mt-4">
+              <EvidenceList thread={thread} busy={busy} run={run} />
+            </div>
           </div>
         </div>
         </>
@@ -172,7 +178,7 @@ export default function Reporting() {
 const STEPS = ["Report", "Receipts", "Review", "Publish"];
 
 // Where this update is: tell what you spent, back it with receipts, review the draft, publish it.
-function Steps({ thread }: { thread: Thread }) {
+function Steps({ thread, campaignId }: { thread: Thread; campaignId: string }) {
   const status = thread.request.status;
   const reported = thread.claims.some((c) => c.status === "reported");
   const current = status === "completed" ? 5 : status === "awaiting_approval" ? 3 : reported ? 2 : 1;
@@ -191,12 +197,23 @@ function Steps({ thread }: { thread: Thread }) {
             >
               {done ? "✓" : n}
             </span>
-            <span className={done ? "text-stone-600" : now ? "font-medium text-stone-900" : "text-stone-400"}>{label}</span>
+            <StepLink n={n} campaignId={campaignId} className={`hover:underline ${done ? "text-stone-600" : now ? "font-medium text-stone-900" : "text-stone-400"}`}>{label}</StepLink>
             {n < STEPS.length && <span className="h-px flex-1 bg-stone-300" />}
           </li>
         );
       })}
     </ol>
+  );
+}
+
+// Report and Receipts jump to those parts of this page; Review and Publish live on the donor update page.
+function StepLink({ n, campaignId, className, children }: { n: number; campaignId: string; className: string; children: React.ReactNode }) {
+  if (n >= 3) return <Link href={`/ngo/campaigns/${campaignId}/updates`} className={className}>{children}</Link>;
+  const target = n === 1 ? "chat" : "documents";
+  return (
+    <button type="button" className={className} onClick={() => document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+      {children}
+    </button>
   );
 }
 
@@ -227,7 +244,7 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
   }, [thread.messages.length, pending]);
   return (
-    <Card className="lg:col-span-3">
+    <Card>
       <ol ref={listRef} className="max-h-[28rem] space-y-3 overflow-y-auto">
         {thread.messages.map((m, i) => (
           <li key={m.id} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-line ${i >= seen ? "msg-in" : ""} ${m.sender_role === "ngo" ? "ml-8 bg-emerald-50" : "mr-8 bg-stone-100"}`}>

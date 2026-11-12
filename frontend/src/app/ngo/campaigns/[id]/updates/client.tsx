@@ -94,7 +94,7 @@ export default function Updates() {
             Preview: this is exactly what donors will see. Nothing is shared until you publish.
           </p>
           <Card className="mt-3">
-            <UpdateCard update={pending.update} items={pending.provenance} apiUrl={API_URL} showWording={false} />
+            <UpdateCard update={pending.update} items={pending.provenance} photos={pending.photos} apiUrl={API_URL} showWording={false} />
           </Card>
           <details className="mt-3 text-sm">
             <summary className="cursor-pointer text-emerald-800">How was this written?</summary>
@@ -125,7 +125,7 @@ export default function Updates() {
             {published.map((e) => (
               <li key={e.update.id}>
                 <Card>
-                  <UpdateCard update={e.update} items={e.provenance} apiUrl={API_URL} showWording={false} />
+                  <UpdateCard update={e.update} items={e.provenance} photos={e.photos} apiUrl={API_URL} showWording={false} />
                 </Card>
               </li>
             ))}

@@ -23,6 +23,7 @@ from contracts.reporting_schemas import (
     CampaignStatus,
     DeliveryStatus,
     DonorUpdateOut,
+    EvidenceKind,
     EvidenceVisibility,
     PublicationStatus,
     ReportingRequestStatus,
@@ -43,6 +44,7 @@ class SubscribeIn(BaseModel):
 class TimelineEntry(BaseModel):
     update: DonorUpdateOut
     provenance: list[dict]
+    photos: list[str] = []  # ids of photos the NGO shared for this update (never receipts)
 
 
 class TimelineOut(BaseModel):
@@ -68,6 +70,17 @@ def update_out(u: DonorUpdate) -> DonorUpdateOut:
         id=u.id, campaign_id=u.campaign_id, title=u.title, body=u.body, evidence_refs=u.evidence_refs_json,
         status=PublicationStatus(u.status), approved_by=u.approved_by, published_at=u.published_at, created_at=u.created_at,
     )
+
+
+def _shared_photos(db: Session, u: DonorUpdate) -> list[str]:
+    """Photos from this update's reporting round that the NGO has not made private. Receipts are never included."""
+    if not u.reporting_request_id:
+        return []
+    return list(db.scalars(
+        select(Evidence.id)
+        .where(Evidence.reporting_request_id == u.reporting_request_id, Evidence.kind == EvidenceKind.PHOTO, Evidence.visibility == EvidenceVisibility.PUBLIC)
+        .order_by(Evidence.created_at)
+    ))
 
 
 def _load_update(db: Session, user: User, update_id: str) -> tuple[DonorUpdate, Campaign]:
@@ -102,7 +115,7 @@ def draft(campaign_id: str, body: DraftIn, user: User = Depends(current_user), d
 def list_updates(campaign_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     c = load_campaign_for_editor(db, user, campaign_id)
     rows = db.scalars(select(DonorUpdate).where(DonorUpdate.campaign_id == c.id).order_by(DonorUpdate.created_at.desc()))
-    return [TimelineEntry(update=update_out(u), provenance=u.provenance_json) for u in rows]
+    return [TimelineEntry(update=update_out(u), provenance=u.provenance_json, photos=_shared_photos(db, u)) for u in rows]
 
 
 @router.post("/updates/{update_id}/approve", response_model=DonorUpdateOut)
@@ -153,7 +166,7 @@ def timeline(campaign_id: str, user: User | None = Depends(optional_user), db: S
     plan = latest_plan(db, c.id)
     return TimelineOut(
         campaign=campaign_out(db, c),
-        entries=[TimelineEntry(update=update_out(u), provenance=_public_provenance(u.provenance_json)) for u in rows],
+        entries=[TimelineEntry(update=update_out(u), provenance=_public_provenance(u.provenance_json), photos=_shared_photos(db, u)) for u in rows],
         totals_note=(
             "Donations received are PayPal-confirmed captures. Reported spending is what the organization "
             "says it spent; document-supported spending is the part matched by reviewed documents. "

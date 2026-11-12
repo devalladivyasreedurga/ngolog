@@ -478,3 +478,17 @@ def test_notes_are_never_nested_when_a_stray_question_is_followed_by_a_photo_que
     thread = say(client, ngo, req_id, "can I instead show you pictures of the donated items")
     text = agent_msgs(thread)[-1]["content"]
     assert text.count("can only help") == 0 and text.count("you can add photos") == 1 and "receipt for 25 school kits" in text
+
+
+def test_shared_photos_reach_donors_but_a_private_photo_or_receipt_does_not(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo)
+    _photo(client, ngo, req_id, "shown")
+    _photo(client, ngo, req_id, "hidden", name="other.png")
+    photos = [m["meta"]["evidence_id"] for m in client.get(f"/api/reporting-requests/{req_id}/thread", headers=ngo).json()["messages"] if m["meta"].get("step") == "evidence_upload"]
+    assert len(photos) == 2
+    client.post(f"/api/evidence/{photos[1]}/visibility", json={"visibility": "private"}, headers=ngo)
+    draft = client.post(f"/api/campaigns/{published_campaign}/updates/draft", json={"reporting_request_id": req_id}, headers=ngo).json()
+    entry = next(e for e in client.get(f"/api/campaigns/{published_campaign}/updates", headers=ngo).json() if e["update"]["id"] == draft["id"])
+    assert entry["photos"] == [photos[0]]

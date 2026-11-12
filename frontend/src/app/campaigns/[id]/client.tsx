@@ -78,10 +78,10 @@ export default function CampaignPage() {
         <p className="mt-2 text-stone-500">No updates yet. Each update appears here after the organization reviews and approves it.</p>
       )}
       <ol className="mt-4 space-y-4">
-        {timeline.entries.map(({ update, provenance }) => (
+        {timeline.entries.map(({ update, provenance, photos }) => (
           <li key={update.id}>
             <Card>
-              <UpdateCard update={update} items={provenance} apiUrl={API_URL} />
+              <UpdateCard update={update} items={provenance} photos={photos} apiUrl={API_URL} />
             </Card>
           </li>
         ))}

@@ -126,6 +126,8 @@ async def upload(
         file_type=mime,
         size_bytes=len(data),
         sha256=hashlib.sha256(data).hexdigest(),
+        # Photos are added to be shown to donors (the NGO sees them in the preview and can unshare); receipts stay private.
+        visibility=EvidenceVisibility.PUBLIC if kind == EvidenceKind.PHOTO else EvidenceVisibility.PRIVATE,
     )
     db.add(ev)
     db.flush()

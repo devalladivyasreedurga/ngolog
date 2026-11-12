@@ -168,6 +168,7 @@ export interface Provenance {
 export interface TimelineEntry {
   update: DonorUpdate;
   provenance: Provenance[];
+  photos?: string[];
 }
 
 export interface Timeline {
