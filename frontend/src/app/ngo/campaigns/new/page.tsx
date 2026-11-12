@@ -51,7 +51,17 @@ export default function NewCampaign() {
 
   return (
     <Page>
-      <h1 className="text-2xl font-semibold">New campaign</h1>
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-emerald-800">Step {campaign ? 2 : 1} of 2</p>
+        <h1 className="mt-1 text-3xl font-semibold tracking-tight">{campaign ? "Almost ready" : "Start a campaign"}</h1>
+        <p className="mt-1 text-stone-600">
+          {campaign ? "One last look before it goes live." : "Tell donors what you are raising money for."}
+        </p>
+        <div className="mt-3 flex gap-1.5" aria-hidden>
+          <span className="h-1 w-12 rounded-full bg-emerald-600" />
+          <span className={`h-1 w-12 rounded-full ${campaign ? "bg-emerald-600" : "bg-stone-200"}`} />
+        </div>
+      </div>
       {!campaign ? (
         <Card className="mt-4">
           <form className="space-y-3" onSubmit={createAndDraft}>
@@ -77,12 +87,12 @@ export default function NewCampaign() {
       ) : (
         plan && (
           <Card className="mt-4 space-y-5">
-            <div>
-              <h2 className="font-semibold">How you&apos;ll report</h2>
-              <p className="mt-1 text-sm text-stone-600">
+            <p className="flex gap-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">
+              <span aria-hidden>ⓘ</span>
+              <span>
                 The assistant will check in {form.reporting_frequency_days === "7" ? "every week" : form.reporting_frequency_days === "14" ? "every two weeks" : "every month"} and ask what you spent and handed out. It never moves money.
-              </p>
-            </div>
+              </span>
+            </p>
             <div>
               <p className="text-sm font-medium">Evidence you can share</p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
