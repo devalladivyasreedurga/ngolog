@@ -386,3 +386,39 @@ def test_claims_from_one_message_share_a_report_id_so_the_panel_can_show_them_to
     thread = say(client, ngo, req_id, "We bought 25 school kits for $500 and distributed 20.")
     ids = {c["claim_type"]: c["report_id"] for c in thread["claims"]}
     assert ids["expense"] and ids["expense"] == ids["impact"]
+
+
+def test_a_stray_question_keeps_the_receipt_prompt_and_its_buttons(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    thread = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()
+    asked = agent_msgs(thread)[-1]
+    thread = say(client, ngo, req_id, "what else can we do with the money?")
+    last = agent_msgs(thread)[-1]
+    assert "can only help with your spending update" in last["content"] and "receipt or invoice for $500.00" in last["content"]
+    assert last["meta"]["awaiting"] == "ask_receipt" and action_kinds(last) == action_kinds(asked)
+    thread = say(client, ngo, req_id, "and what about the rest of the budget?")  # asked twice: no nested repeats
+    assert agent_msgs(thread)[-1]["content"].count("can only help") == 1
+
+
+def test_a_question_with_a_number_is_not_taken_as_the_amount(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We also bought 10 pens")
+    thread = say(client, ngo, req_id, "can we use 5 pens instead?")
+    assert thread["claims"] == [] and agent_msgs(thread)[-1]["meta"]["awaiting"] == "ask_amount"
+    assert "How much did 10 pens cost?" in agent_msgs(thread)[-1]["content"]
+    for answer in ("30", "$30", "30$", "about 30 dollars"):
+        thread = say(client, ngo, req_id, answer)
+        if thread["claims"]:
+            break
+    assert [c["amount_cents"] for c in thread["claims"]] == [3000]
+
+
+def test_a_stray_question_while_asked_about_handing_out_keeps_that_question(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    claim = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()["claims"][0]
+    upload(client, ngo, req_id, png("TOTAL=500 NO=Q7"), claim["id"])
+    thread = say(client, ngo, req_id, "why do you ask?")
+    last = agent_msgs(thread)[-1]
+    assert "handed out" in last["content"] and last["meta"]["awaiting"] == "ask_delivery"

@@ -296,6 +296,7 @@ def reply_intent(campaign_title: str, open_question: str, text: str) -> ReplyInt
     return ReplyIntent.EXPLANATION
 
 
+BARE_AMOUNT = re.compile(r"(?:usd\s*)?\$?\s*\d[\d,]*(?:\.\d{1,2})?\s*(?:\$|usd|dollars?)?", re.I)
 NOTHING_TO_REPORT = "No problem. There's nothing to report yet. Start an update again whenever you have something."
 
 
@@ -312,8 +313,30 @@ def _save_report(db: Session, req: ReportingRequest, campaign: Campaign, text: s
     return report
 
 
-def _decline_off_topic(db: Session, req: ReportingRequest, restore: list) -> None:
+HOLD_STATES = ("ask_receipt", "ask_delivery", "ask_amount")  # the pending question and its buttons must survive a stray question
+SCOPE_REPLY = "I can only help with your spending update, so I can't answer that."
+
+
+def _last_agent_text(db: Session, req: ReportingRequest) -> str:
+    return db.scalar(
+        select(AgentMessage.content)
+        .where(AgentMessage.thread_id == thread_for(db, req).id, AgentMessage.sender_role == MessageSender.AGENT)
+        .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+    ) or ""
+
+
+def _hold_prompt(db: Session, req: ReportingRequest, wmeta: dict) -> None:
+    """Answer a stray question with the scope note, then ask the same pending question again, buttons included."""
+    prompt = wmeta.get("prompt") or _last_agent_text(db, req)
+    keep = {k: wmeta[k] for k in ("awaiting", "actions", "claim_id", "description", "asked_delivery") if k in wmeta}
+    say(db, req, f"{SCOPE_REPLY} {prompt}", step="off_topic", prompt=prompt, **keep)
+
+
+def _decline_off_topic(db: Session, req: ReportingRequest, restore: list, awaiting: str | None = None, wmeta: dict | None = None) -> None:
     """A question or small talk: say what this chat is for, then repeat the one thing still needed."""
+    if awaiting in HOLD_STATES and not restore:
+        _hold_prompt(db, req, wmeta or {})
+        return
     for c in restore:  # a stray question must not wipe a proposal that was waiting for a yes
         c.status = ClaimStatus.PROPOSED
     if restore:
@@ -325,7 +348,7 @@ def _decline_off_topic(db: Session, req: ReportingRequest, restore: list) -> Non
     say(
         db,
         req,
-        "I can only help with your spending update, so I can't answer that. "
+        f"{SCOPE_REPLY} "
         + ("Anything else to add?" if already else "What did you spend campaign money on?"),
         step="off_topic",
         awaiting="ask_spend",
@@ -340,8 +363,12 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
         req.status = ReportingRequestStatus.IN_REVIEW
 
     if awaiting == "ask_amount":
-        amount = parse_amount(text)
         description = wmeta.get("description", "that")
+        if not BARE_AMOUNT.fullmatch(text.strip()):  # "30", "$30", "30$": an answer. Anything longer might be a question.
+            if reply_intent(campaign.title, f"How much did {description} cost?", text) == ReplyIntent.QUESTION:
+                _hold_prompt(db, req, wmeta)
+                return
+        amount = parse_amount(text)
         if amount is None:
             say(db, req, f"Just the number is fine, for example 500. How much did {description} cost?", step="ask_amount", awaiting="ask_amount", description=description)
             return
@@ -390,7 +417,7 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
             say(
                 db,
                 req,
-                "I can only help with your spending update, so I can't answer that. For the open question, upload a document or tell me what explains the difference.",
+                f"{SCOPE_REPLY} For the open question, upload a document or tell me what explains the difference.",
                 step="off_topic",
                 **keep,
             )
@@ -429,7 +456,7 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
         say(db, req, "Thanks! I couldn't read that automatically. Please add each expense and activity with \"Add manually\".", mode="manual")
         return
     if not extracted.is_report:
-        _decline_off_topic(db, req, restore=withdrawn_now)
+        _decline_off_topic(db, req, restore=withdrawn_now, awaiting=awaiting, wmeta=wmeta)
         return
     report = _save_report(db, req, campaign, text)
 
