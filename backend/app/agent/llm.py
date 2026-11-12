@@ -89,9 +89,9 @@ class ClaudeProvider:
             "Extract structured claims from an NGO's progress report. Expenses are money the "
             "NGO says it spent, including what was bought. Impacts are things it says it did "
             "or delivered to people; a purchase is an expense, not also an impact. Use only "
-            "what the message states; do not infer amounts. Set amount_uncertain when the NGO "
-            "hedges. List in unanswered_questions only what is needed to understand a stated "
-            "claim, at most two. " + UNTRUSTED_NOTE
+            "what the message states; do not infer amounts. If the NGO gives no amount for an "
+            "expense, leave amount null (never 0). Set amount_uncertain only when the NGO "
+            "explicitly hedges. Leave unanswered_questions empty. " + UNTRUSTED_NOTE
         )
         text = f"Campaign: {campaign_title}\n<ngo_message>\n{ngo_message}\n</ngo_message>"
         return self._parse(ExtractedClaims, system, [{"type": "text", "text": text}])

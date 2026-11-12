@@ -17,6 +17,7 @@ Rules enforced here:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
@@ -34,11 +35,11 @@ from app.db.models import (
     AgentThread,
     Campaign,
     DonorUpdate,
+    Evidence,
     EvidenceCheck,
     ExpenseClaim,
     ImpactClaim,
     Investigation,
-    ReportingPlan,
     ReportingRequest,
 )
 from contracts.reporting_schemas import (
@@ -108,35 +109,174 @@ def open_reporting_request(db: Session, campaign: Campaign, *, cycle_key: str | 
     db.flush()
     db.add(AgentThread(reporting_request_id=req.id))
     db.flush()
-    plan = db.scalar(select(ReportingPlan).where(ReportingPlan.campaign_id == campaign.id, ReportingPlan.approved_at.is_not(None)).order_by(ReportingPlan.version.desc()))
-    questions = plan.proposed_questions_json if plan else ["What has happened since the last update, and have campaign funds been spent?"]
-    lines = "\n".join(f"- {q}" for q in questions[:5])
     say(
         db,
         req,
-        f"Hi! It's time for a quick update on \"{campaign.title}\" for your donors.\n{lines}\n"
-        "Reply in your own words; I'll turn it into a draft for you to check.",
+        f"Hi! Quick update on \"{campaign.title}\" for your donors. "
+        "What did you spend campaign money on since the last update?",
+        step="open",
+        awaiting="ask_spend",
     )
     campaign.next_followup_at = utcnow() + timedelta(days=campaign.reporting_frequency_days)
     audit(db, actor_type="agent" if actor_id is None else "user", actor_id=actor_id, action="reporting_request.open", entity_type="reporting_request", entity_id=req.id)
     return req, True
 
 
+# ---------------------------------------------------------------- conversation helpers
+#
+# One question at a time. The assistant's state is its own last message: `meta.awaiting`
+# says what it is waiting for, and `meta.actions` are the quick-reply buttons the page shows.
+
+SKIP_WORDS = {"skip", "no", "none", "nothing", "not yet", "n/a", "no thanks", "nope"}
+YES_WORDS = {"yes", "yep", "yeah", "right", "correct", "ok", "okay", "that's right", "thats right", "yes that's right", "looks good"}
+
+
+def waiting_for(db: Session, req: ReportingRequest) -> tuple[str | None, dict]:
+    """What the assistant is waiting for: only set while its message is the latest in the thread."""
+    last = db.scalar(
+        select(AgentMessage).where(AgentMessage.thread_id == thread_for(db, req).id).order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+    )
+    if last is None or last.sender_role != MessageSender.AGENT:
+        return None, {}
+    meta = last.meta_json or {}
+    return meta.get("awaiting"), meta
+
+
+def parse_amount(text: str) -> float | None:
+    """Pull a dollar amount from a short reply. Prefers '$500'; falls back to the first number."""
+    m = re.search(r"\$\s*(\d[\d,]*(?:\.\d{1,2})?)", text) or re.search(r"(\d[\d,]*(?:\.\d{1,2})?)", text)
+    if not m:
+        return None
+    value = float(m.group(1).replace(",", ""))
+    return value if value > 0 else None
+
+
+def _is(text: str, words: set[str]) -> bool:
+    return text.strip().lower().strip(" .!") in words
+
+
+def _proposed(db: Session, req: ReportingRequest) -> list[ExpenseClaim | ImpactClaim]:
+    expenses, impacts = claims_for_request(db, req)
+    return [c for c in expenses + impacts if c.status == ClaimStatus.PROPOSED]
+
+
+def _phrase(c: ExpenseClaim | ImpactClaim) -> str:
+    if isinstance(c, ExpenseClaim):
+        about = "about " if c.amount_uncertain else ""
+        return f"{c.description} for {about}{money(c.amount_cents, c.currency)}"
+    qty = f" ({c.quantity:g} {c.unit or ''})".replace(" )", ")") if c.quantity is not None else ""
+    return f"{c.description}{qty}"
+
+
+def propose_summary(db: Session, req: ReportingRequest) -> None:
+    """One short confirmation covering everything the NGO just reported."""
+    phrases = [_phrase(c) for c in _proposed(db, req)]
+    if len(phrases) > 1:
+        phrases = [", ".join(phrases[:-1]) + ", and " + phrases[-1]] if len(phrases) > 2 else [" and ".join(phrases)]
+    say(
+        db,
+        req,
+        f"Got it: {phrases[0]}. Is that right?",
+        step="extract_claims",
+        awaiting="confirm_claims",
+        actions=[{"kind": "confirm_all", "label": "Yes, that's right"}, {"kind": "reject_all", "label": "Not quite"}],
+    )
+
+
+def _receipt_prompt(claim: ExpenseClaim) -> tuple[str, dict]:
+    actions = [
+        {"kind": "upload", "label": "Upload receipt", "claim_type": "expense", "claim_id": claim.id},
+        {"kind": "no_evidence", "label": "I don't have one", "claim_type": "expense", "claim_id": claim.id},
+    ]
+    text = f"Do you have a receipt or invoice for {money(claim.amount_cents, claim.currency)} ({claim.description})?"
+    return text, {"step": "request_more_information", "awaiting": "ask_receipt", "claim_id": claim.id, "actions": actions}
+
+
+def next_receipt_prompt(db: Session, req: ReportingRequest) -> tuple[str, dict] | None:
+    expenses, _ = claims_for_request(db, req)
+    for c in expenses:
+        if c.status == ClaimStatus.REPORTED and c.evidence_status == EvidenceReviewStatus.REPORTED and not linked_evidence(db, "expense", c.id):
+            return _receipt_prompt(c)
+    return None
+
+
+def delivery_prompt(db: Session, req: ReportingRequest) -> tuple[str, dict] | None:
+    """Ask once per cycle whether anything was handed out, unless the NGO already said so."""
+    _, impacts = claims_for_request(db, req)
+    if any(i.status != ClaimStatus.WITHDRAWN for i in impacts):
+        return None
+    thread = thread_for(db, req)
+    for m in db.scalars(select(AgentMessage).where(AgentMessage.thread_id == thread.id)):
+        if (m.meta_json or {}).get("asked_delivery"):
+            return None
+    return (
+        "Last thing: has anything been handed out yet?",
+        {"awaiting": "ask_delivery", "asked_delivery": True, "actions": [{"kind": "skip", "label": "Skip"}]},
+    )
+
+
+def _what_next(db: Session, req: ReportingRequest) -> tuple[str, dict] | None:
+    return next_receipt_prompt(db, req) or delivery_prompt(db, req)
+
+
+def confirm_proposed(db: Session, req: ReportingRequest, user_id: str) -> None:
+    """The NGO confirmed everything proposed. Mark it reported, then ask the single next thing."""
+    confirmed = _proposed(db, req)
+    for c in confirmed:
+        c.status = ClaimStatus.REPORTED
+        audit(db, actor_type="user", actor_id=user_id, action="claim.confirm", entity_type=f"{'expense' if isinstance(c, ExpenseClaim) else 'impact'}_claim", entity_id=c.id, previous={"status": ClaimStatus.PROPOSED}, new={"status": ClaimStatus.REPORTED})
+    db.flush()
+    nxt = next_receipt_prompt(db, req)
+    if nxt:
+        say(db, req, nxt[0], **nxt[1])
+    elif confirmed and not any(isinstance(c, ExpenseClaim) for c in confirmed):
+        say(db, req, "Thanks, noted.", step="request_more_information")
+
+
+def reject_proposed(db: Session, req: ReportingRequest, user_id: str) -> None:
+    for c in _proposed(db, req):
+        c.status = ClaimStatus.WITHDRAWN
+        audit(db, actor_type="user", actor_id=user_id, action="claim.withdraw", entity_type=f"{'expense' if isinstance(c, ExpenseClaim) else 'impact'}_claim", entity_id=c.id)
+    say(db, req, "No problem. What should it say instead?", step="open", awaiting="ask_spend")
+
+
 # ---------------------------------------------------------------- interpret / extract
 
 
 def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, user_id: str, text: str) -> None:
+    awaiting, wmeta = waiting_for(db, req)
     say(db, req, text, MessageSender.NGO, user_id=user_id)
     if req.status in (ReportingRequestStatus.OPEN, ReportingRequestStatus.OVERDUE):
         req.status = ReportingRequestStatus.IN_REVIEW
+
+    if awaiting == "ask_amount":
+        amount = parse_amount(text)
+        description = wmeta.get("description", "that")
+        if amount is None:
+            say(db, req, f"Just the number is fine, for example 500. How much did {description} cost?", step="ask_amount", awaiting="ask_amount", description=description)
+            return
+        report = _latest_report(db, req)
+        db.add(ExpenseClaim(campaign_id=campaign.id, activity_report_id=report.id, description=description, amount_cents=round(amount * 100), currency=campaign.currency, source="ai"))
+        db.flush()
+        propose_summary(db, req)
+        return
+    if awaiting == "ask_delivery" and _is(text, SKIP_WORDS):
+        return  # nothing to say: the draft follows
+    if awaiting == "confirm_claims":
+        if _is(text, YES_WORDS):
+            confirm_proposed(db, req, user_id)
+            return
+        for c in _proposed(db, req):  # a correction replaces what was proposed
+            c.status = ClaimStatus.WITHDRAWN
+
     open_inv = db.scalar(
         select(Investigation).where(Investigation.campaign_id == campaign.id, Investigation.status == InvestigationStatus.OPEN)
     )
-    if open_inv is not None:
+    if open_inv is not None and awaiting not in ("confirm_claims", "ask_delivery", "ask_spend"):
         # A reply to a clarification question: record it on the investigation; numbers
         # only change when evidence or a confirmed claim changes.
         open_inv.resolution = ((open_inv.resolution or "") + f"\nNGO reply: {text}").strip()
-        say(db, req, "Thanks, I've noted your explanation. If you have a document for the difference, upload it and I'll re-check the totals.")
+        say(db, req, "Thanks, I've noted that. If you have a document for the difference, upload it and I'll re-check.")
         return
 
     report = ActivityReport(campaign_id=campaign.id, reporting_request_id=req.id, description=text)
@@ -145,16 +285,19 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
     retrieval.index(db, retrieval.doc_for_report(db, report))
     ai = get_ai()
     if ai is None:
-        say(db, req, "Thanks! Automatic reading is off right now, so please add each expense and activity with the form below.", mode="manual")
+        say(db, req, "Thanks! Automatic reading is off right now, so please add each expense and activity with \"Add manually\".", mode="manual")
         return
     try:
         extracted = ai.extract_claims(campaign.title, text)
     except AIUnavailable:
-        say(db, req, "Thanks! I couldn't read that automatically. Please add each expense and activity with the form below.", mode="manual")
+        say(db, req, "Thanks! I couldn't read that automatically. Please add each expense and activity with \"Add manually\".", mode="manual")
         return
 
-    lines: list[str] = []
+    missing_amount: list[str] = []
     for e in extracted.expenses:
+        if e.amount is None or e.amount <= 0:
+            missing_amount.append(e.description)  # never save a guessed $0 claim
+            continue
         db.add(
             ExpenseClaim(
                 campaign_id=campaign.id,
@@ -168,45 +311,30 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
                 source="ai",
             )
         )
-        hedge = " (you said this was approximate)" if e.amount_uncertain else ""
-        lines.append(f"- Expense: {e.description}, {money(round(e.amount * 100), e.currency or campaign.currency)}{hedge}")
     for i in extracted.impacts:
         db.add(ImpactClaim(campaign_id=campaign.id, activity_report_id=report.id, description=i.description, quantity=i.quantity, unit=i.unit, source="ai"))
-        qty = f" ({i.quantity:g} {i.unit or ''})".rstrip() if i.quantity is not None else ""
-        lines.append(f"- Activity: {i.description}{qty}")
-    if not lines:
-        say(db, req, "Thanks! I didn't find specific expenses or activities. Could you say what was bought or done, and roughly how much was spent?")
+    db.flush()
+    if missing_amount:
+        say(db, req, f"How much did {missing_amount[0]} cost?", step="ask_amount", awaiting="ask_amount", description=missing_amount[0])
         return
-    follow = "".join(f"\nAlso: {q}" for q in extracted.unanswered_questions[:2])
-    say(db, req, "Here's what I understood. Please confirm or correct each item:\n" + "\n".join(lines) + follow, step="extract_claims")
+    if not _proposed(db, req):
+        say(db, req, "I didn't catch anything spent or done yet. What did you spend campaign money on?", step="open", awaiting="ask_spend")
+        return
+    propose_summary(db, req)
 
 
 # ---------------------------------------------------------------- determine_evidence_needs
 
 
 def on_claim_confirmed(db: Session, req: ReportingRequest, claim: ExpenseClaim | ImpactClaim) -> None:
+    """A single claim was confirmed from the side panel."""
     if isinstance(claim, ExpenseClaim):
         if linked_evidence(db, "expense", claim.id):
             evaluate_expense(db, req, claim)
             return
-        say(
-            db,
-            req,
-            f"To back up \"{claim.description}\" ({money(claim.amount_cents, claim.currency)}), please upload the "
-            "invoice, receipt or payment confirmation. If you don't have one, tell me why and I'll label it "
-            "as reported but not documented.",
-            step="request_more_information",
-            claim_id=claim.id,
-        )
-    else:
-        say(
-            db,
-            req,
-            f"For \"{claim.description}\", an aggregate distribution log (counts and dates, no names) helps donors. "
-            "It's optional; without it this stays labelled as your statement.",
-            step="request_more_information",
-            claim_id=claim.id,
-        )
+        text, meta = _receipt_prompt(claim)
+        say(db, req, text, **meta)
+    # Activity claims need nothing more: distribution logs stay optional.
 
 
 # ---------------------------------------------------------------- evaluate_evidence / clarify
@@ -249,29 +377,38 @@ def evaluate_expense(db: Session, req: ReportingRequest, claim: ExpenseClaim) ->
         if open_inv:
             open_inv.status = InvestigationStatus.RECONCILED
             open_inv.resolution = ((open_inv.resolution or "") + f"\nDocuments now total {money(cmp.documented_cents, claim.currency)}, matching the reported amount.").strip()
-        say(
-            db,
-            req,
-            f"Thanks. The documents for \"{claim.description}\" now total {money(cmp.documented_cents, claim.currency)}, "
-            "which is consistent with what you reported. (That means the paperwork matches; it isn't an independent audit.)",
-            step="evaluate_evidence",
-            claim_id=claim.id,
+        text = (
+            f"That matches: the receipts total {money(cmp.documented_cents, claim.currency)} for {claim.description}. "
+            "(The paperwork matches; this isn't an audit.)"
         )
+        meta = {"step": "evaluate_evidence", "claim_id": claim.id}
+        nxt = _what_next(db, req)
+        if nxt:
+            text += " " + nxt[0]
+            meta |= {k: v for k, v in nxt[1].items() if k != "step"}
+        say(db, req, text, **meta)
     else:
         claim.evidence_status = EvidenceReviewStatus.NEEDS_CLARIFICATION
-        question = _clarifying_question(claim, cmp) + _context_note(db, claim, cmp)
+        question = _clarifying_question(claim, cmp)
+        _record_context(db, req, claim, cmp)
+        actions = [{"kind": "upload", "label": "Upload another receipt", "claim_type": "expense", "claim_id": claim.id}]
+        if cmp.gap_cents > 0 and cmp.documented_cents > 0 and not cmp.currency_mismatch_ids:
+            actions.append({"kind": "set_amount", "label": f"It was an estimate: use {money(cmp.documented_cents, claim.currency)}", "claim_type": "expense", "claim_id": claim.id, "amount": cmp.documented_cents / 100})
         if open_inv is None:
             db.add(Investigation(campaign_id=claim.campaign_id, claim_type="expense", claim_id=claim.id, question=question))
         else:
             open_inv.question = question
-        _ask(db, req, question, claim.id)
+        _ask(db, req, question, claim.id, actions)
     audit(db, actor_type="agent", actor_id=None, action="claim.evaluate", entity_type="expense_claim", entity_id=claim.id, previous={"evidence_status": previous}, new={"evidence_status": claim.evidence_status, **findings})
 
 
-def _context_note(db: Session, claim: ExpenseClaim, cmp) -> str:
-    """Retrieve earlier campaign records related to this claim (Elastic, or Postgres fallback)
-    and cite them by source id. Context for the NGO, never proof of anything."""
-    exclude = set(cmp.counted_evidence_ids) | set(cmp.duplicate_evidence_ids)
+def _record_context(db: Session, req: ReportingRequest, claim: ExpenseClaim, cmp) -> None:
+    """Retrieve EARLIER campaign records related to this claim (Elastic, or Postgres fallback)
+    and keep them, with source ids, in the evidence trail. Context for reviewers, never proof
+    of anything, and not repeated in the chat."""
+    own = set(db.scalars(select(ActivityReport.id).where(ActivityReport.reporting_request_id == req.id)))
+    own |= set(db.scalars(select(Evidence.id).where(Evidence.reporting_request_id == req.id)))
+    exclude = set(cmp.counted_evidence_ids) | set(cmp.duplicate_evidence_ids) | own
     hits, backend = retrieval.search_campaign(db, claim.campaign_id, claim.description, k=3, exclude_source_ids=exclude)
     # A record that only repeats the claim adds nothing for the NGO.
     hits = [h for h in hits if h.snippet.strip().lower() != claim.description.strip().lower()][:2]
@@ -284,23 +421,20 @@ def _context_note(db: Session, claim: ExpenseClaim, cmp) -> str:
             findings_json={"backend": backend, "query": claim.description, "hits": [h.as_dict() for h in hits]},
         )
     )
-    if not hits:
-        return ""
-    cites = "; ".join(f"\"{h.snippet}\" [{h.source_type} {h.source_id[:8]}]" for h in hits)
-    return f"\n\nFor reference, earlier records for this campaign mention: {cites}"
-
 
 def _clarifying_question(claim: ExpenseClaim, cmp) -> str:
     cur = claim.currency
-    if cmp.duplicate_evidence_ids:
-        return "One of the documents looks like a copy of a receipt already submitted, so I counted it once. Is there a different document for the rest?"
+    if cmp.latest_is_duplicate and cmp.gap_cents > 0:
+        return (
+            "That looks like a copy of a receipt already submitted, so I didn't count it again. "
+            f"Receipts counted so far total {money(cmp.documented_cents, cur)} of {money(cmp.claim_cents, cur)}. Is there a different one?"
+        )
     if cmp.currency_mismatch_ids:
         return f"A document is in a different currency from the {cur} you reported. What exchange rate or converted amount should be used?"
     if cmp.gap_cents > 0:
         return (
-            f"You reported {money(cmp.claim_cents, cur)} for \"{claim.description}\", but the documents total "
-            f"{money(cmp.documented_cents, cur)}. Is there another receipt for the remaining {money(cmp.gap_cents, cur)}, "
-            "or was the reported amount an estimate?"
+            f"The receipts total {money(cmp.documented_cents, cur)}, which leaves {money(cmp.gap_cents, cur)} of the "
+            f"{money(cmp.claim_cents, cur)} unmatched. Is there another receipt, or was {money(cmp.claim_cents, cur)} an estimate?"
         )
     return (
         f"The documents total {money(cmp.documented_cents, cur)}, which is more than the {money(cmp.claim_cents, cur)} "
@@ -308,23 +442,30 @@ def _clarifying_question(claim: ExpenseClaim, cmp) -> str:
     )
 
 
-def _ask(db: Session, req: ReportingRequest, question: str, claim_id: str) -> None:
+def _ask(db: Session, req: ReportingRequest, question: str, claim_id: str, actions: list[dict] | None = None) -> None:
     limit = get_settings().max_clarification_rounds
     if req.clarification_rounds >= limit:
         req.status = ReportingRequestStatus.ESCALATED
         inv = db.scalar(select(Investigation).where(Investigation.claim_id == claim_id, Investigation.status == InvestigationStatus.OPEN))
         if inv:
             inv.status = InvestigationStatus.ESCALATED
-        say(db, req, "I've asked a few times without resolving this, so a reviewer will take a look. Nothing has been marked as wrongdoing.", step="escalate", claim_id=claim_id)
+        say(db, req, "I've asked a few times, so a reviewer will take a look. Nothing has been marked as wrongdoing.", step="escalate", claim_id=claim_id)
         return
     req.clarification_rounds += 1
-    say(db, req, question, step="clarify", claim_id=claim_id)
+    say(db, req, question, step="clarify", awaiting="ask_clarification", claim_id=claim_id, actions=actions or [])
 
 
 def record_no_evidence(db: Session, req: ReportingRequest, claim: ExpenseClaim | ImpactClaim, explanation: str, user_id: str) -> None:
     claim.evidence_status = EvidenceReviewStatus.NOT_DOCUMENTED
-    say(db, req, f"No document available: {explanation}", MessageSender.NGO, user_id=user_id, claim_id=claim.id)
-    say(db, req, "Understood. Donors will see this as reported by you, not independently documented.", claim_id=claim.id)
+    say(db, req, explanation, MessageSender.NGO, user_id=user_id, claim_id=claim.id)
+    db.flush()
+    text = "Understood. Donors will see this as reported by you, not documented."
+    meta: dict = {"claim_id": claim.id}
+    nxt = _what_next(db, req)
+    if nxt:
+        text += " " + nxt[0]
+        meta |= nxt[1]
+    say(db, req, text, **meta)
 
 
 # ---------------------------------------------------------------- draft_update / queue_for_review
@@ -340,6 +481,8 @@ def is_ready_for_draft(db: Session, req: ReportingRequest) -> bool:
     expenses, impacts = claims_for_request(db, req)
     reported = [c for c in expenses if c.status == ClaimStatus.REPORTED]
     pending = [c for c in expenses + impacts if c.status == ClaimStatus.PROPOSED]
+    if waiting_for(db, req)[0] == "ask_delivery":
+        return False  # the NGO is deciding whether to report anything handed out
     return bool(reported) and not pending and all(_settled(c.evidence_status) for c in reported)
 
 

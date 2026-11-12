@@ -96,6 +96,12 @@ def evaluate_evidence(state: CycleState, runtime: Runtime[AgentContext]) -> Cycl
     return {}
 
 
+def confirm_claims(state: CycleState, runtime: Runtime[AgentContext]) -> CycleState:
+    db, req, _ = _load(runtime, state)
+    workflow.confirm_proposed(db, req, state["event"]["user_id"])
+    return {}
+
+
 def record_no_evidence(state: CycleState, runtime: Runtime[AgentContext]) -> CycleState:
     db, req, _ = _load(runtime, state)
     ev = state["event"]
@@ -124,10 +130,10 @@ def queue_for_review(state: CycleState, runtime: Runtime[AgentContext]) -> Cycle
     workflow.say(
         db,
         req,
-        "Everything you reported has been reviewed, so I've drafted a donor update from it. "
-        "Please check it on the Donor updates page; nothing is shared until you approve and publish it.",
+        "All set. I've drafted a donor update from what you reported. Nothing is shared until you approve it.",
         MessageSender.AGENT,
         step="queue_for_review",
+        actions=[{"kind": "link", "label": "Review the draft", "href": "updates"}],
     )
     return {}
 
@@ -137,6 +143,7 @@ def queue_for_review(state: CycleState, runtime: Runtime[AgentContext]) -> Cycle
 EVENT_ROUTES = {
     "message": "interpret_ngo_response",
     "claim_confirmed": "determine_evidence_needs",
+    "claims_confirmed": "confirm_claims",
     "evidence": "evaluate_evidence",
     "no_evidence": "record_no_evidence",
 }
@@ -160,6 +167,7 @@ def build_graph():
         ("interpret_ngo_response", interpret_ngo_response),
         ("determine_evidence_needs", determine_evidence_needs),
         ("evaluate_evidence", evaluate_evidence),
+        ("confirm_claims", confirm_claims),
         ("record_no_evidence", record_no_evidence),
         ("draft_update", draft_update),
         ("queue_for_review", queue_for_review),

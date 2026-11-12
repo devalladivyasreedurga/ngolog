@@ -62,7 +62,8 @@ def review_evidence(db: Session, req: ReportingRequest, ev: Evidence) -> None:
     already = db.scalar(select(EvidenceCheck).where(EvidenceCheck.evidence_id == ev.id, EvidenceCheck.check_type == CheckType.REUSED_RECEIPT))
     if hits and already is None:
         db.add(EvidenceCheck(evidence_id=ev.id, check_type=CheckType.REUSED_RECEIPT, status=CheckStatus.FLAG, findings_json={"backend": backend, "matches": [h.as_dict() for h in hits], "note": "Same receipt number already submitted. A lead for review, not proof of wrongdoing."}))
-        workflow.say(db, req, f"\"{ev.original_filename}\" has the same receipt number as a document submitted earlier ({hits[0].source_id[:8]}), so I won't count it again. If it's a different receipt, please check the number.", step="evaluate_evidence", evidence_id=ev.id)
+        if db.scalar(select(ClaimEvidence).where(ClaimEvidence.evidence_id == ev.id)) is None:  # a linked claim gets one combined question instead
+            workflow.say(db, req, "That receipt number was already submitted, so I won't count it again. If it's a different receipt, please check the number.", step="evaluate_evidence", evidence_id=ev.id)
     retrieval.index(db, retrieval.doc_for_evidence(db, ev))
 
 
@@ -136,7 +137,8 @@ async def upload(
     dups = find_exact_duplicates(db, ev, ngo_campaign_ids)
     if dups:
         db.add(EvidenceCheck(evidence_id=ev.id, check_type=CheckType.EXACT_DUPLICATE, status=CheckStatus.FLAG, findings_json={"matching_evidence_ids": [d.id for d in dups], "note": "Identical file uploaded before. A lead for review, not proof of wrongdoing."}))
-        workflow.say(db, req, "This file is identical to one uploaded earlier, so I won't count it twice. If that was a mistake, upload the intended document.", step="evaluate_evidence", evidence_id=ev.id)
+        if claim is None:  # a linked claim gets one combined question instead
+            workflow.say(db, req, "This file is identical to one uploaded earlier, so I won't count it twice. If that was a mistake, upload the intended document.", step="evaluate_evidence", evidence_id=ev.id)
 
     if kind in (EvidenceKind.RECEIPT, EvidenceKind.PAYMENT_CONFIRMATION):
         ai = get_ai()

@@ -75,13 +75,14 @@ def _claim(client, ngo, req_id, description, amount):
 
 
 def test_discrepancy_question_cites_earlier_records_via_elastic(client, ai, ngo, published_campaign, fake_es):
-    req_id = open_request(client, ngo, published_campaign)
-    client.post(f"/api/reporting-requests/{req_id}/messages", json={"content": "Ordered school kits from Demo Stationers, bags invoiced separately."}, headers=ngo)
+    earlier = open_request(client, ngo, published_campaign, "cycle-earlier")
+    client.post(f"/api/reporting-requests/{earlier}/messages", json={"content": "Ordered school kits from Demo Stationers, bags invoiced separately."}, headers=ngo)
+    req_id = open_request(client, ngo, published_campaign, "cycle-now")
     claim_id = _claim(client, ngo, req_id, "school kits", 500)
     thread = upload(client, ngo, req_id, png("TOTAL=420 NO=A1"), claim_id)
     assert fake_es.indices.created is not None  # index created with campaign/ngo keyword fields
     question = thread["messages"][-1]["content"]
-    assert "$80.00" in question and "earlier records" in question and "[activity_report" in question
+    assert "$80.00" in question and "[activity_report" not in question  # chat stays short
     ctx = next(c for c in thread["checks"] if c["check_type"] == "context_retrieval")
     assert ctx["findings"]["backend"] == "elastic" and ctx["findings"]["hits"][0]["source_type"] == "activity_report"
     # Every search is scoped to this campaign.
@@ -121,7 +122,9 @@ def test_reused_receipt_number_across_claims_not_counted(client, ai, ngo, publis
     thread = upload(client, ngo, req_id, png("TOTAL=100 NO=INV-77 copy"), c2, name="again.png")
     second = next(c for c in thread["claims"] if c["id"] == c2)
     assert second["supported_amount_cents"] == 0 and second["evidence_status"] == "needs_clarification"
-    assert any(c["check_type"] == "reused_receipt" and c["status"] == "flag" for c in thread["checks"]) or any("same receipt number" in m["content"] for m in thread["messages"])
+    assert "already submitted" in thread["messages"][-1]["content"]  # one combined question, not two bubbles
+    trail = next(r for r in client.get("/api/accountability", headers=ngo).json()["claims"] if r["claim_id"] == c2)["checks"]
+    assert any(c["check_type"] == "reused_receipt" and c["status"] == "flag" for c in trail)
 
 
 def test_rrf_merges_keyword_and_semantic_rankings():

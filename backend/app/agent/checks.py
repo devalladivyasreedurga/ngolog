@@ -29,6 +29,7 @@ class AmountComparison:
     unreadable_evidence_ids: list[str] = field(default_factory=list)
     duplicate_evidence_ids: list[str] = field(default_factory=list)
     currency_mismatch_ids: list[str] = field(default_factory=list)
+    latest_is_duplicate: bool = False  # the newest upload is the one that was ignored
 
     @property
     def gap_cents(self) -> int:
@@ -39,8 +40,7 @@ class AmountComparison:
         return (
             self.gap_cents == 0
             and not self.unreadable_evidence_ids
-            and not self.duplicate_evidence_ids
-            and not self.currency_mismatch_ids
+            and not self.currency_mismatch_ids  # ignored duplicates do not block a claim the other receipts already cover
         )
 
 
@@ -67,9 +67,11 @@ def compare_claim_evidence(db: Session, claim: ExpenseClaim) -> AmountComparison
     )
     seen_hashes: set[str] = set()
     seen_numbers: set[str] = set()
+    last_receipt_id = None
     for ev in linked_evidence(db, "expense", claim.id):
         if ev.kind not in (EvidenceKind.RECEIPT, EvidenceKind.PAYMENT_CONFIRMATION):
             continue
+        last_receipt_id = ev.id
         values = effective_receipt_values(ev)
         number = (values.get("receipt_number") or "").strip().lower()
         if ev.id in flagged or ev.sha256 in seen_hashes or (number and number in seen_numbers):
@@ -88,6 +90,7 @@ def compare_claim_evidence(db: Session, claim: ExpenseClaim) -> AmountComparison
             continue
         result.documented_cents += round(float(total) * 100)
         result.counted_evidence_ids.append(ev.id)
+    result.latest_is_duplicate = last_receipt_id in result.duplicate_evidence_ids
     return result
 
 

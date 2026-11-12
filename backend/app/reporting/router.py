@@ -250,6 +250,28 @@ def add_manual_claim(request_id: str, body: ManualClaimIn, user: User = Depends(
     return build_thread(db, req, c)
 
 
+@router.post("/reporting-requests/{request_id}/claims/confirm", response_model=ThreadOut)
+def confirm_all_claims(request_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Chat button: 'Yes, that's right' confirms everything the assistant proposed."""
+    req, c = load_request_for_editor(db, user, request_id)
+    if req.status == ReportingRequestStatus.COMPLETED:
+        raise HTTPException(409, "This reporting cycle is closed")
+    runtime.dispatch(db, req, {"type": "claims_confirmed", "user_id": user.id})
+    db.commit()
+    return build_thread(db, req, c)
+
+
+@router.post("/reporting-requests/{request_id}/claims/reject", response_model=ThreadOut)
+def reject_all_claims(request_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Chat button: 'Not quite' drops the proposal and asks again."""
+    req, c = load_request_for_editor(db, user, request_id)
+    if req.status == ReportingRequestStatus.COMPLETED:
+        raise HTTPException(409, "This reporting cycle is closed")
+    workflow.reject_proposed(db, req, user.id)
+    db.commit()
+    return build_thread(db, req, c)
+
+
 @router.post("/claims/{claim_type}/{claim_id}/confirm", response_model=ThreadOut)
 def confirm_claim(claim_type: str, claim_id: str, body: ConfirmIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     claim, req = load_claim(db, user, claim_type, claim_id)

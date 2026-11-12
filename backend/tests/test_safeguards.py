@@ -119,7 +119,10 @@ def test_duplicate_receipt_counted_once(client, ai, ngo, published_campaign):
     upload(client, ngo, req_id, png("TOTAL=420"), claim_id)
     thread = upload(client, ngo, req_id, png("TOTAL=420"), claim_id, name="again.png")
     assert thread["claims"][0]["supported_amount_cents"] == 42000
-    assert any(c["check_type"] == "exact_duplicate" for c in thread["checks"]) or any("identical" in m["content"] for m in thread["messages"])
+    last = thread["messages"][-1]
+    assert last["meta"]["step"] == "clarify" and "already submitted" in last["content"]  # one combined question
+    trail = client.get("/api/accountability", headers=ngo).json()["claims"][0]["checks"]
+    assert any(c["check_type"] == "exact_duplicate" and c["status"] == "flag" for c in trail)
 
 
 def test_no_evidence_is_labelled_not_fraud(client, ai, ngo, published_campaign):

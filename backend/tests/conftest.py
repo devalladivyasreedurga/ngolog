@@ -14,6 +14,7 @@ os.environ.update(
     SECRET_KEY="test-secret",
     REVIEWER_EMAILS="reviewer@ngolog.org",
     PAYPAL_WEBHOOK_ID="WH-TEST",
+    SCHEDULER_ENABLED="false",
     ANTHROPIC_API_KEY="",
     PAYPAL_CLIENT_ID="",
     PAYPAL_CLIENT_SECRET="",
@@ -101,7 +102,11 @@ class FakeAI:
         m = re.search(r"bought (\d+) (\w[\w ]*?) for \$(\d+)", ngo_message)
         if m:
             expenses.append(ExtractedExpense(description=f"{m.group(1)} {m.group(2)}", amount=float(m.group(3))))
-        d = re.search(r"distributed (\d+)", ngo_message)
+        else:
+            n = re.search(r"bought (\d+) ([a-z ]+?)(?: and |\.|$)", ngo_message)
+            if n:  # no price stated: the real model returns amount=null
+                expenses.append(ExtractedExpense(description=f"{n.group(1)} {n.group(2).strip()}", amount=None))
+        d = re.search(r"(?:distributed|handed out) (\d+)", ngo_message)
         if d:
             impacts.append(ExtractedImpact(description="kits distributed to students", quantity=float(d.group(1)), unit="kits"))
         return ExtractedClaims(expenses=expenses, impacts=impacts)

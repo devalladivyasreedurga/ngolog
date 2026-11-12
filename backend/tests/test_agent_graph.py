@@ -15,12 +15,19 @@ def _expense(client, ngo, req_id, amount=500):
     return thread["claims"][-1]["id"]
 
 
+def _skip(client, ngo, req_id):
+    return client.post(f"/api/reporting-requests/{req_id}/messages", json={"content": "Skip"}, headers=ngo).json()
+
+
 def test_graph_auto_drafts_when_everything_is_settled(client, ai, ngo, published_campaign):
     req_id = open_request(client, ngo, published_campaign)
     claim_id = _expense(client, ngo, req_id)
     upload(client, ngo, req_id, png("TOTAL=420"), claim_id)
     assert client.get(f"/api/campaigns/{published_campaign}/updates", headers=ngo).json() == []
     thread = upload(client, ngo, req_id, png("TOTAL=80"), claim_id, name="r2.png")
+    assert thread["messages"][-1]["meta"]["awaiting"] == "ask_delivery"  # no draft until that is answered
+    assert client.get(f"/api/campaigns/{published_campaign}/updates", headers=ngo).json() == []
+    thread = _skip(client, ngo, req_id)
     assert thread["messages"][-1]["meta"]["step"] == "queue_for_review"
     assert thread["request"]["status"] == "awaiting_approval"
     drafts = client.get(f"/api/campaigns/{published_campaign}/updates", headers=ngo).json()
@@ -36,6 +43,10 @@ def test_graph_survives_restart(client, ai, ngo, published_campaign, tmp_path):
     runtime.set_checkpointer(SqliteSaver(sqlite3.connect(path, check_same_thread=False)))
     thread = upload(client, ngo, req_id, png("TOTAL=500"), claim_id)
     assert thread["claims"][0]["evidence_status"] == "consistent"
+    assert thread["messages"][-1]["meta"]["awaiting"] == "ask_delivery"
+    # ...and the pause survives another restart before the NGO answers.
+    runtime.set_checkpointer(SqliteSaver(sqlite3.connect(path, check_same_thread=False)))
+    thread = _skip(client, ngo, req_id)
     assert thread["messages"][-1]["meta"]["step"] == "queue_for_review"
 
 
@@ -43,6 +54,7 @@ def test_publish_closes_the_cycle(client, ai, ngo, published_campaign):
     req_id = open_request(client, ngo, published_campaign)
     claim_id = _expense(client, ngo, req_id, amount=10)
     upload(client, ngo, req_id, png("TOTAL=10"), claim_id)
+    _skip(client, ngo, req_id)
     draft = client.get(f"/api/campaigns/{published_campaign}/updates", headers=ngo).json()[0]["update"]
     client.post(f"/api/updates/{draft['id']}/approve", headers=ngo)
     client.post(f"/api/updates/{draft['id']}/publish", headers=ngo)
@@ -55,6 +67,7 @@ def test_new_evidence_replaces_stale_draft(client, ai, ngo, published_campaign):
     req_id = open_request(client, ngo, published_campaign)
     claim_id = _expense(client, ngo, req_id, amount=10)
     upload(client, ngo, req_id, png("TOTAL=10"), claim_id)
+    _skip(client, ngo, req_id)
     # A second confirmed expense arrives and settles: the old draft is withdrawn, a fresh one drafted.
     claim2 = _expense(client, ngo, req_id, amount=5)
     upload(client, ngo, req_id, png("TOTAL=5"), claim2, name="b.png")

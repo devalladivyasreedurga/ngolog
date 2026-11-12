@@ -11,3 +11,6 @@ frontend/.next/
 *.checkpoints.sqlite
 .claude/
 docs/demo-script.md
+*.sqlite-shm
+*.sqlite-wal
+*.checkpoints.sqlite*

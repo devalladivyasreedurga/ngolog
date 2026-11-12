@@ -131,12 +131,15 @@ class DeliveryStatus(StrEnum):
 
 class ExtractedExpense(BaseModel):
     description: str
-    amount: float = Field(description="Amount in major units, e.g. 375.00")
+    amount: float | None = Field(
+        default=None,
+        description="Amount in major units, e.g. 375.00. null when the NGO did not state an amount; never 0.",
+    )
     currency: str = "USD"
     category: str | None = None
     expense_date: date | None = None
     amount_uncertain: bool = Field(
-        default=False, description="True if the NGO hedged ('about', 'roughly', 'estimated')."
+        default=False, description="True only if the NGO explicitly hedged ('about', 'roughly', 'estimated'). False when no amount was given."
     )
 
 
