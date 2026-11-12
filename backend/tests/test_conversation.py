@@ -308,16 +308,18 @@ def test_a_new_expense_during_a_receipt_question_is_not_swallowed(client, ai, ng
     assert agent_msgs(thread)[-1]["meta"]["awaiting"] == "confirm_claims"
 
 
-def test_the_earlier_receipt_gap_comes_back_after_a_new_expense_is_confirmed(client, ai, ngo, published_campaign):
+def test_the_earlier_receipt_gap_comes_back_after_the_new_expense_is_settled(client, ai, ngo, published_campaign):
     req_id, claim, _ = _gap(client, ai, ngo, published_campaign)
     say(client, ngo, req_id, "We also bought 10 pens for $30.")
     thread = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()
     last = agent_msgs(thread)[-1]
-    assert last["content"].startswith("Back to the earlier question") and "$80.00" in last["content"]  # the open gap, not forgotten
-    assert "no_evidence" in action_kinds(last) and "upload" in action_kinds(last)
-    thread = client.post(f"/api/claims/expense/{claim['id']}/no-evidence", json={"explanation": "No more receipts."}, headers=ngo).json()
+    assert "$30.00" in last["content"] and last["meta"]["awaiting"] == "ask_receipt"  # the new item first, no repeat of the old gap
+    assert not any(m["content"].startswith("Back to the earlier") for m in agent_msgs(thread))
+    pens = next(c for c in thread["claims"] if c["amount_cents"] == 3000)
+    thread = client.post(f"/api/claims/expense/{pens['id']}/no-evidence", json={"explanation": "I don't have one."}, headers=ngo).json()
     last = agent_msgs(thread)[-1]
-    assert "$30.00" in last["content"] and last["meta"]["awaiting"] == "ask_receipt"  # then the new expense
+    assert "Back to the earlier question" in last["content"] and "$80.00" in last["content"]
+    assert last["meta"]["awaiting"] == "ask_clarification" and "no_evidence" in action_kinds(last)
 
 
 def test_button_taps_appear_in_the_chat_as_the_ngos_messages(client, ai, ngo, published_campaign):

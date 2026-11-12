@@ -212,12 +212,13 @@ def _receipt_prompt(claim: ExpenseClaim) -> tuple[str, dict]:
 
 def next_receipt_prompt(db: Session, req: ReportingRequest) -> tuple[str, dict] | None:
     expenses, _ = claims_for_request(db, req)
-    for c in expenses:
+    for c in expenses:  # new expenses first
         if c.status == ClaimStatus.REPORTED and c.evidence_status == EvidenceReviewStatus.REPORTED and not linked_evidence(db, "expense", c.id):
             return _receipt_prompt(c)
+    for c in expenses:  # then an earlier receipt gap that is still open, so the draft is never silently stuck
         if c.status == ClaimStatus.REPORTED and c.evidence_status == EvidenceReviewStatus.NEEDS_CLARIFICATION:
             inv = db.scalar(select(Investigation).where(Investigation.claim_id == c.id, Investigation.status == InvestigationStatus.OPEN))
-            if inv is not None:  # an earlier receipt gap is still open: bring it back instead of leaving the draft stuck
+            if inv is not None:
                 actions = [
                     {"kind": "upload", "label": "Upload another receipt", "claim_type": "expense", "claim_id": c.id},
                     {"kind": "no_evidence", "label": "No more receipts", "claim_type": "expense", "claim_id": c.id},

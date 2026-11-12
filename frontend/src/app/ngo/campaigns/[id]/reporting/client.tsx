@@ -300,9 +300,18 @@ function Claims({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run
       <h2 className="font-semibold">What you reported</h2>
       <p className="mt-0.5 text-xs text-stone-500">Use the buttons in the chat to confirm or add receipts.</p>
       {live.length === 0 && <p className="mt-2 text-sm text-stone-500">Nothing yet.</p>}
-      <ul className="mt-3 space-y-3">
-        {live.map((c) => <ClaimRow key={c.id} claim={c} />)}
-      </ul>
+      {(["expense", "impact"] as const).map((kind) => {
+        const rows = live.filter((c) => c.claim_type === kind);
+        if (rows.length === 0) return null;
+        return (
+          <div key={kind} className="mt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{kind === "expense" ? "Spent" : "Handed out"}</p>
+            <ul className="mt-2 space-y-2">
+              {rows.map((c) => <ClaimRow key={c.id} claim={c} />)}
+            </ul>
+          </div>
+        );
+      })}
       <details className="mt-4 border-t border-stone-100 pt-3">
       <summary className="cursor-pointer text-sm text-emerald-800">Add manually</summary>
       <form
@@ -345,10 +354,11 @@ function ClaimRow({ claim }: { claim: Claim }) {
           Reported {money(claim.amount_cents, claim.currency ?? "USD")} · receipts match {money(claim.supported_amount_cents, claim.currency ?? "USD")}
         </p>
       ) : (
-        <p className="text-stone-600">{claim.quantity != null && `${claim.quantity} ${claim.unit ?? ""}`}</p>
+        claim.quantity != null &&
+        !claim.description.includes(String(claim.quantity)) && <p className="text-stone-600">{`${claim.quantity} ${claim.unit ?? ""}`}</p>
       )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <StatusBadge status={claim.evidence_status} />
+        {(claim.claim_type === "expense" || claim.evidence_status !== "reported") && <StatusBadge status={claim.evidence_status} />}
         {claim.status === "proposed" && <span className="text-xs text-amber-800">Waiting for your OK in the chat</span>}
       </div>
     </li>
