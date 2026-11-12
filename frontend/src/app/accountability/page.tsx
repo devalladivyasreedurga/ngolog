@@ -68,11 +68,11 @@ const CLAIM_COLUMNS: ColDef<ClaimRow>[] = [
 
 const REQUEST_COLUMNS: ColDef<RequestRow>[] = [
   { field: "campaign_title", headerName: "Campaign", flex: 2, minWidth: 180 },
-  { field: "cycle_key", headerName: "Cycle", width: 120 },
+  { field: "cycle_key", headerName: "Round", width: 120 },
   { field: "status", headerName: "Status", width: 170, filter: true },
   { field: "due_at", headerName: "Due", width: 130, valueFormatter: (p) => (p.value ? new Date(p.value + "Z").toLocaleDateString() : "") },
   { field: "past_due", headerName: "Past due", width: 150, cellDataType: false, valueFormatter: (p) => (p.value ? "No recent update" : "") },
-  { field: "clarification_rounds", headerName: "Questions asked", width: 150, type: "rightAligned" },
+  { field: "clarification_rounds", headerName: "Clarifications asked", width: 150, type: "rightAligned" },
 ];
 
 export default function Accountability() {

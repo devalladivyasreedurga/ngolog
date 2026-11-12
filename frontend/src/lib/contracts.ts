@@ -148,9 +148,25 @@ export interface DonorUpdate {
   created_at: string;
 }
 
+/** One item in a donor update. Amount fields are absent on drafts made before they were added. */
+export interface Provenance {
+  text: string;
+  claim_type: "expense" | "impact" | null;
+  claim_id: string | null;
+  evidence_status: EvidenceReviewStatus | null;
+  evidence_ids?: string[];
+  evidence_count?: number;
+  description?: string;
+  amount_cents?: number;
+  supported_cents?: number;
+  currency?: string;
+  quantity?: number | null;
+  unit?: string | null;
+}
+
 export interface TimelineEntry {
   update: DonorUpdate;
-  provenance: Record<string, unknown>[];
+  provenance: Provenance[];
 }
 
 export interface Timeline {
@@ -169,6 +185,16 @@ export interface NotificationItem {
   status: string;
   created_at: string;
 }
+
+/** Short labels for donors: what the paperwork shows, never "verified". */
+export const DONOR_STATUS: Record<EvidenceReviewStatus, { label: string; tone: "good" | "wait" | "plain" }> = {
+  consistent: { label: "Documents match", tone: "good" },
+  needs_clarification: { label: "Being clarified", tone: "wait" },
+  reviewed_by_human: { label: "Reviewed by a person", tone: "good" },
+  submitted: { label: "Documents received", tone: "plain" },
+  not_documented: { label: "No documents provided", tone: "plain" },
+  reported: { label: "Reported, no documents yet", tone: "plain" },
+};
 
 export const STATUS_LABEL: Record<EvidenceReviewStatus, string> = {
   reported: "NGO reported, no documents yet",

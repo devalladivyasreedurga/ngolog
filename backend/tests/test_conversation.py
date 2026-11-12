@@ -158,3 +158,33 @@ def test_a_flagged_duplicate_does_not_block_reconciling_with_the_real_receipts(c
     thread = upload(client, ngo, req_id, png("TOTAL=80 NO=B2"), claim["id"], name="second.png")
     assert thread["claims"][0]["evidence_status"] == "consistent" and thread["claims"][0]["supported_amount_cents"] == 50000
     assert agent_msgs(thread)[-1]["content"].startswith("That matches")
+
+
+def test_update_items_carry_amounts_for_the_donor_timeline(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500 and distributed 20.")
+    thread = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()
+    expense = next(c for c in thread["claims"] if c["claim_type"] == "expense")
+    upload(client, ngo, req_id, png("TOTAL=500 NO=Z1"), expense["id"])
+    drafts = client.get(f"/api/campaigns/{published_campaign}/updates", headers=ngo).json()
+    draft = drafts[0]["update"]
+    client.post(f"/api/updates/{draft['id']}/approve", headers=ngo)
+    client.post(f"/api/updates/{draft['id']}/publish", headers=ngo)
+    entry = client.get(f"/api/campaigns/{published_campaign}/timeline").json()["entries"][0]
+    items = {p["claim_type"]: p for p in entry["provenance"]}
+    assert items["expense"]["amount_cents"] == 50000 and items["expense"]["supported_cents"] == 50000
+    assert items["expense"]["evidence_status"] == "consistent" and items["impact"]["quantity"] == 20
+    assert all("evidence_ids" not in p for p in entry["provenance"])  # private ids still never reach donors
+
+
+def test_activity_phrase_does_not_repeat_the_unit():
+    from app.agent.workflow import _phrase
+    from app.db.models import ImpactClaim
+
+    def impact(description, quantity, unit):
+        return ImpactClaim(description=description, quantity=quantity, unit=unit)
+
+    assert _phrase(impact("blankets handed out", 15.0, "blankets")) == "15 blankets handed out"
+    assert _phrase(impact("Delivered to homeless people", 2.0, "people")) == "Delivered to homeless people (2 people)"
+    assert _phrase(impact("meals served", None, None)) == "meals served"
+    assert _phrase(impact("meals served", 40.0, None)) == "meals served (40)"

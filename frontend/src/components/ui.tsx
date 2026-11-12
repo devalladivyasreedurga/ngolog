@@ -75,7 +75,7 @@ export function Nav() {
         )}
         {user?.role === "donor" && (
           <Link href="/donor/dashboard" className="text-stone-700 hover:underline">
-            My donations
+            My campaigns
           </Link>
         )}
         <span className="ml-auto" />

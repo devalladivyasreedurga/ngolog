@@ -4,10 +4,11 @@ import { PayPalOneTimePaymentButton, PayPalProvider } from "@paypal/react-paypal
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Card, ErrorText, inputClass, Page } from "@/components/ui";
-import { api } from "@/lib/api";
+import { Info, UpdateCard } from "@/components/update-card";
+import { Button, Card, ErrorText, inputClass, Page } from "@/components/ui";
+import { api, API_URL } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { money, STATUS_LABEL, type Donation, type EvidenceReviewStatus, type Timeline } from "@/lib/contracts";
+import { money, type Donation, type Timeline } from "@/lib/contracts";
 
 const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? "";
 
@@ -33,54 +34,49 @@ export default function CampaignPage() {
 
       <div className="mt-6 grid gap-4 md:grid-cols-3">
         <Card className="md:col-span-2">
-          <h2 className="font-semibold">Money in and money reported</h2>
-          <div className="mt-3 h-2 rounded-full bg-stone-100">
+          <div className="flex items-baseline justify-between">
+            <p className="text-2xl font-semibold">{money(c.donations_received_cents, c.currency)}</p>
+            <p className="text-sm text-stone-500">of {money(c.target_amount_cents, c.currency)} goal · {c.donor_count} {c.donor_count === 1 ? "donor" : "donors"}</p>
+          </div>
+          <div className="mt-2 h-2 rounded-full bg-stone-100">
             <div className="h-2 rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
           </div>
-          <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
-            <Stat label="Donations received (PayPal)" value={money(c.donations_received_cents, c.currency)} sub={`${c.donor_count} donors · goal ${money(c.target_amount_cents, c.currency)}`} />
-            <Stat label="Spending reported by NGO" value={money(c.reported_expenses_cents, c.currency)} sub="NGO statement" />
-            <Stat label="Matched by reviewed documents" value={money(c.document_supported_cents, c.currency)} sub="Consistent, not audited" />
+          <dl className="mt-5 grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+            <Tile
+              label="Donations received"
+              value={money(c.donations_received_cents, c.currency)}
+              caption="Confirmed by PayPal"
+              info="Counted only after PayPal confirms the payment."
+            />
+            <Tile
+              label="Reported spending"
+              value={money(c.reported_expenses_cents, c.currency)}
+              caption="Reported by the organization"
+              info="What the organization says it has spent. It is their statement, not an audited account balance."
+            />
+            <Tile
+              label="Matched by receipts"
+              value={money(c.document_supported_cents, c.currency)}
+              caption="Receipts agree with the report"
+              info="The part of reported spending that reviewed receipts support. A matching receipt shows a purchase, not that items reached people."
+            />
           </dl>
-          <p className="mt-4 text-xs text-stone-500">{timeline.totals_note}</p>
         </Card>
         <DonateBox campaignId={c.id} onDonated={load} />
       </div>
 
-      <h2 className="mt-10 text-xl font-semibold">Transparency timeline</h2>
+      <h2 className="mt-10 text-xl font-semibold">Updates from the organization</h2>
       {timeline.reporting_overdue && (
         <p className="mt-2 rounded-lg bg-stone-100 p-3 text-sm text-stone-700">No recent update has been provided.</p>
       )}
-      {timeline.entries.length === 0 && <p className="mt-2 text-stone-500">No updates published yet. Updates appear after the organization reviews and approves them.</p>}
+      {timeline.entries.length === 0 && !timeline.reporting_overdue && (
+        <p className="mt-2 text-stone-500">No updates yet. Each update appears here after the organization reviews and approves it.</p>
+      )}
       <ol className="mt-4 space-y-4">
         {timeline.entries.map(({ update, provenance }) => (
           <li key={update.id}>
             <Card>
-              <p className="text-xs text-stone-500">{update.published_at && new Date(update.published_at + "Z").toLocaleString()}</p>
-              <h3 className="mt-1 font-semibold">{update.title}</h3>
-              <ul className="mt-3 space-y-3 text-sm">
-                {provenance.map((p, i) => (
-                  <li key={i}>
-                    <p>{String(p.text)}</p>
-                    {p.evidence_status ? (
-                      <p className="mt-1 text-xs text-stone-500">
-                        Status: {STATUS_LABEL[p.evidence_status as EvidenceReviewStatus] ?? String(p.evidence_status)}
-                        {Number(p.evidence_count) > 0 && ` · ${p.evidence_count} document(s) reviewed`}
-                      </p>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-              {update.evidence_refs.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  {update.evidence_refs.map((ref) => (
-                    <a key={ref} className="text-emerald-800 underline" href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/evidence/${ref}/file`} target="_blank" rel="noreferrer">
-                      View shared document
-                    </a>
-                  ))}
-                </div>
-              )}
-              <p className="mt-3 text-xs text-stone-500">&quot;Consistent&quot; means the documents match the reported amounts. It is not an independent audit.</p>
+              <UpdateCard update={update} items={provenance} apiUrl={API_URL} />
             </Card>
           </li>
         ))}
@@ -89,12 +85,15 @@ export default function CampaignPage() {
   );
 }
 
-function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
+function Tile({ label, value, caption, info }: { label: string; value: string; caption: string; info: string }) {
   return (
     <div>
-      <dt className="text-stone-500">{label}</dt>
+      <dt className="text-stone-500">
+        {label}
+        <Info text={info} />
+      </dt>
       <dd className="text-lg font-semibold">{value}</dd>
-      <dd className="text-xs text-stone-500">{sub}</dd>
+      <dd className="text-xs text-stone-500">{caption}</dd>
     </div>
   );
 }
@@ -115,10 +114,23 @@ function DonateBox({ campaignId, onDonated }: { campaignId: string; onDonated: (
           <Link href="/signin" className="text-emerald-800 underline">Sign in as a donor</Link> to give through PayPal sandbox.
         </p>
       ) : done ? (
-        <p className="mt-2 text-sm text-emerald-800">
-          Thank you! PayPal confirmed your {money(done.amount_cents, done.currency)} donation (capture {done.paypal_capture_id}). You&apos;ll see updates on this page and in{" "}
-          <Link href="/donor/dashboard" className="underline">your dashboard</Link>.
-        </p>
+        <div className="mt-2 space-y-3 text-sm">
+          <p className="text-emerald-800">
+            Thank you! PayPal confirmed your {money(done.amount_cents, done.currency)} donation.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDone(null);
+                setError(null);
+              }}
+            >
+              Donate again
+            </Button>
+            <Link href="/donor/dashboard" className="self-center text-emerald-800 underline">My donations</Link>
+          </div>
+        </div>
       ) : (
         <div className="mt-3 space-y-3">
           <label className="block text-sm">
@@ -144,7 +156,7 @@ function DonateBox({ campaignId, onDonated }: { campaignId: string; onDonated: (
             />
           </PayPalProvider>
           <ErrorText error={error} />
-          <p className="text-xs text-stone-500">Sandbox only: use a PayPal sandbox buyer account. Donations go to the campaign; NGOLog does not hold or release funds.</p>
+          <p className="text-xs text-stone-500">Sandbox payment. Your gift goes to the campaign; NGOLog never holds the money.</p>
         </div>
       )}
     </Card>

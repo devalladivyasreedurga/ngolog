@@ -164,8 +164,12 @@ def _phrase(c: ExpenseClaim | ImpactClaim) -> str:
     if isinstance(c, ExpenseClaim):
         about = "about " if c.amount_uncertain else ""
         return f"{c.description} for {about}{money(c.amount_cents, c.currency)}"
-    qty = f" ({c.quantity:g} {c.unit or ''})".replace(" )", ")") if c.quantity is not None else ""
-    return f"{c.description}{qty}"
+    if c.quantity is None:
+        return c.description
+    unit = (c.unit or "").strip()
+    if unit and c.description.lower().startswith(unit.lower()):
+        return f"{c.quantity:g} {c.description}"  # "15 blankets handed out", not "blankets handed out (15 blankets)"
+    return f"{c.description} ({c.quantity:g} {unit})".replace(" )", ")")
 
 
 def propose_summary(db: Session, req: ReportingRequest) -> None:
@@ -517,11 +521,11 @@ def draft_donor_update(db: Session, campaign: Campaign, req: ReportingRequest | 
             text = f"The organization reported spending {amt} on {c.description}. This has not been independently documented."
         else:
             text = f"The organization reported spending {amt} on {c.description}. Supporting documents have not been provided yet."
-        sentences.append({"text": text, "claim_type": "expense", "claim_id": c.id, "evidence_ids": ev_ids, "evidence_status": c.evidence_status})
+        sentences.append({"text": text, "claim_type": "expense", "claim_id": c.id, "evidence_ids": ev_ids, "evidence_status": c.evidence_status, "description": c.description, "amount_cents": c.amount_cents, "supported_cents": c.supported_amount_cents, "currency": c.currency})
     for i in impacts:
         qty = f" ({i.quantity:g} {i.unit or ''})".rstrip() if i.quantity is not None else ""
         text = f"The organization reports: {i.description}{qty}. This is the organization's statement; NGOLog has not independently confirmed it."
-        sentences.append({"text": text, "claim_type": "impact", "claim_id": i.id, "evidence_ids": [], "evidence_status": i.evidence_status})
+        sentences.append({"text": text, "claim_type": "impact", "claim_id": i.id, "evidence_ids": [], "evidence_status": i.evidence_status, "description": i.description, "quantity": i.quantity, "unit": i.unit})
     if not sentences:
         sentences.append({"text": "No new spending or activity has been reported for this period.", "claim_type": None, "claim_id": None, "evidence_ids": [], "evidence_status": None})
     footer = "\"Consistent\" means the documents match the reported amounts. It is not an independent audit."

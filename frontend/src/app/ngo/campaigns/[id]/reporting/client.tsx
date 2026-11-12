@@ -7,6 +7,15 @@ import { Button, Card, ErrorText, inputClass, Page, StatusBadge } from "@/compon
 import { api, API_URL, getToken } from "@/lib/api";
 import { money, type Claim, type Evidence, type ReportingRequest, type Thread } from "@/lib/contracts";
 
+const ROUND_STATUS: Record<string, string> = {
+  open: "Waiting for your reply",
+  in_review: "In progress",
+  awaiting_approval: "Draft ready to review",
+  completed: "Published",
+  overdue: "No recent update",
+  escalated: "With a reviewer",
+};
+
 type Action = { kind: string; label: string; claim_type?: string; claim_id?: string; amount?: number; href?: string };
 
 async function uploadEvidence(requestId: string, claimType: string, claimId: string, file: File): Promise<Thread> {
@@ -64,7 +73,11 @@ export default function Reporting() {
       <ErrorText error={error} />
       {requests.length > 1 && (
         <select className={`${inputClass} mt-3 max-w-xs`} onChange={(e) => run(() => api<Thread>(`/api/reporting-requests/${e.target.value}/thread`))}>
-          {requests.map((r) => <option key={r.id} value={r.id}>{r.cycle_key} · {r.status}</option>)}
+          {requests.map((r, i) => (
+            <option key={r.id} value={r.id}>
+              Update {requests.length - i} · {new Date(r.created_at + "Z").toLocaleDateString()} · {ROUND_STATUS[r.status] ?? r.status}
+            </option>
+          ))}
         </select>
       )}
       {!thread ? (
@@ -95,7 +108,7 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
     <Card className="lg:col-span-3">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">Conversation with the accountability assistant</h2>
-        <span className="text-xs text-stone-500">Follow-up questions: {thread.request.clarification_rounds} of 3</span>
+        <span className="text-xs text-stone-500">{ROUND_STATUS[thread.request.status] ?? thread.request.status}</span>
       </div>
       <ol ref={listRef} className="mt-4 max-h-[28rem] space-y-3 overflow-y-auto">
         {thread.messages.map((m) => (
@@ -119,6 +132,18 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
           <input className={inputClass} placeholder="Type your reply…" value={text} onChange={(e) => setText(e.target.value)} />
           <Button type="submit" disabled={busy || !text.trim()}>Send</Button>
         </form>
+      )}
+      {!closed && (
+        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+          {[
+            ["+ Add another expense", "We also bought "],
+            ["+ Add what was handed out", "We handed out "],
+          ].map(([label, starter]) => (
+            <button key={label} type="button" className="rounded-full bg-stone-100 px-3 py-1 text-stone-700 hover:bg-stone-200" onClick={() => setText(starter)}>
+              {label}
+            </button>
+          ))}
+        </div>
       )}
       {thread.investigations.some((i) => i.status === "open" || i.status === "escalated") && (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -191,9 +216,10 @@ function Claims({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run
   return (
     <Card>
       <h2 className="font-semibold">What you reported</h2>
+      <p className="mt-0.5 text-xs text-stone-500">Use the buttons in the chat to confirm or add receipts.</p>
       {live.length === 0 && <p className="mt-2 text-sm text-stone-500">Nothing yet.</p>}
       <ul className="mt-3 space-y-3">
-        {live.map((c) => <ClaimRow key={c.id} claim={c} thread={thread} busy={busy} run={run} />)}
+        {live.map((c) => <ClaimRow key={c.id} claim={c} />)}
       </ul>
       <details className="mt-4 border-t border-stone-100 pt-3">
       <summary className="cursor-pointer text-sm text-emerald-800">Add manually</summary>
@@ -228,44 +254,21 @@ function Claims({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run
   );
 }
 
-function ClaimRow({ claim, thread, busy, run }: { claim: Claim; thread: Thread; busy: boolean; run: Run }) {
-  const [amount, setAmount] = useState(claim.amount_cents ? String(claim.amount_cents / 100) : "");
-  const [noEvidence, setNoEvidence] = useState("");
-  const base = `/api/claims/${claim.claim_type}/${claim.id}`;
-
-  const upload = (file: File) => uploadEvidence(thread.request.id, claim.claim_type, claim.id, file);
-
+function ClaimRow({ claim }: { claim: Claim }) {
   return (
     <li className="rounded-lg border border-stone-200 p-3 text-sm">
       <p className="font-medium">{claim.description}</p>
       {claim.claim_type === "expense" ? (
         <p className="text-stone-600">
-          Reported {money(claim.amount_cents, claim.currency ?? "USD")} · documents support {money(claim.supported_amount_cents, claim.currency ?? "USD")}
+          Reported {money(claim.amount_cents, claim.currency ?? "USD")} · receipts match {money(claim.supported_amount_cents, claim.currency ?? "USD")}
         </p>
       ) : (
         <p className="text-stone-600">{claim.quantity != null && `${claim.quantity} ${claim.unit ?? ""}`}</p>
       )}
-      <div className="mt-2"><StatusBadge status={claim.evidence_status} /></div>
-      {claim.status === "proposed" ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          {claim.claim_type === "expense" && <input className={`${inputClass} w-28`} type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} aria-label="Amount" />}
-          <Button disabled={busy} onClick={() => run(() => api<Thread>(`${base}/confirm`, { method: "POST", json: claim.claim_type === "expense" ? { amount: Number(amount) } : {} }))}>Confirm</Button>
-          <Button variant="ghost" disabled={busy} onClick={() => run(() => api<Thread>(`${base}/withdraw`, { method: "POST" }))}>Not right</Button>
-        </div>
-      ) : (
-        claim.evidence_status !== "consistent" && claim.evidence_status !== "not_documented" && (
-          <div className="mt-3 space-y-2">
-            <label className="block text-xs text-stone-600">
-              Upload {claim.claim_type === "expense" ? "receipt or invoice" : "distribution log"} (JPEG, PNG, PDF)
-              <input className="mt-1 block text-xs" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={busy} onChange={(e) => e.target.files?.[0] && run(() => upload(e.target.files![0]))} />
-            </label>
-            <div className="flex gap-2">
-              <input className={`${inputClass} text-xs`} placeholder="No document? Say why" value={noEvidence} onChange={(e) => setNoEvidence(e.target.value)} />
-              <Button variant="secondary" disabled={busy || noEvidence.length < 3} onClick={() => run(() => api<Thread>(`${base}/no-evidence`, { method: "POST", json: { explanation: noEvidence } }))}>Save</Button>
-            </div>
-          </div>
-        )
-      )}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <StatusBadge status={claim.evidence_status} />
+        {claim.status === "proposed" && <span className="text-xs text-amber-800">Waiting for your OK in the chat</span>}
+      </div>
     </li>
   );
 }
