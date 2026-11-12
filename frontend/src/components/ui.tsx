@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { STATUS_LABEL, type EvidenceReviewStatus } from "@/lib/contracts";
 
@@ -55,13 +56,14 @@ export function ErrorText({ error }: { error: string | null }) {
 
 export function Nav() {
   const { user, signOut } = useAuth();
+  const router = useRouter();
   return (
     <header className="bg-emerald-400 text-emerald-950">
       <nav className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-6 py-3 text-sm">
         <Link href="/" className="text-base font-semibold text-emerald-950">
           NGOLog<span className="text-coral-500">.</span>
         </Link>
-        <Link href="/" className="text-emerald-950 hover:underline">
+        <Link href="/campaigns" className="text-emerald-950 hover:underline">
           Campaigns
         </Link>
         {user?.role === "ngo_admin" && (
@@ -83,7 +85,14 @@ export function Nav() {
         {user ? (
           <>
             <span className="text-emerald-950/80">{user.email}</span>
-            <Button variant="ghost" className="!text-emerald-950" onClick={signOut}>
+            <Button
+              variant="ghost"
+              className="!text-emerald-950"
+              onClick={() => {
+                signOut();
+                router.push("/");
+              }}
+            >
               Sign out
             </Button>
           </>
