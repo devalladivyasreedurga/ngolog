@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     elastic_api_key: str = ""
     elastic_inference_id: str = ""  # e.g. an ELSER endpoint id; enables semantic_text search
 
+    # Zapier MCP: only used to email donors when an NGO publishes an update. Empty = in-app only.
+    zapier_mcp_server_url: str = ""
+    zapier_mcp_auth_token: str = ""
+    notification_from_email: str = ""
+    # Which Zapier action sends the email (generic Zapier MCP servers name it per call).
+    zapier_email_app: str = "GoogleMailV2CLIAPI"
+    zapier_email_action: str = "message"
+    zapier_email_tool_name: str = "gmail_send_email"
+
     # Evidence storage
     upload_dir: Path = REPO_ROOT / "backend" / "uploads"
     max_upload_bytes: int = 10 * 1024 * 1024
@@ -61,6 +70,10 @@ class Settings(BaseSettings):
     @property
     def paypal_configured(self) -> bool:
         return bool(self.paypal_client_id and self.paypal_client_secret)
+
+    @property
+    def zapier_configured(self) -> bool:
+        return bool(self.zapier_mcp_server_url)
 
     @property
     def ai_configured(self) -> bool:

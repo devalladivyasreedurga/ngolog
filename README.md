@@ -82,7 +82,7 @@ Without `ANTHROPIC_API_KEY` the app runs in manual mode: the NGO enters claims a
 | Elastic | Campaign-scoped retrieval over reports and receipts, reused-receipt search (Postgres fallback) |
 | AG Grid Community | Accountability console: claims, evidence status, gaps, reporting requests, reviewer actions |
 | Render | Blueprint in `render.yaml`: API, web app, Postgres, disk for evidence uploads |
-| Planned | Zapier MCP email delivery (stretch); reminders are in-app today |
+| Built | Zapier MCP donor "new update" email on publish (needs `ZAPIER_MCP_*` in `.env`; in-app only when unset); reminders are in-app |
 
 ## Repository map
 

@@ -18,6 +18,10 @@ os.environ.update(
     ANTHROPIC_API_KEY="",
     PAYPAL_CLIENT_ID="",
     PAYPAL_CLIENT_SECRET="",
+    # Never let a developer's real .env make tests email anyone.
+    ZAPIER_MCP_SERVER_URL="",
+    ZAPIER_MCP_AUTH_TOKEN="",
+    NOTIFICATION_FROM_EMAIL="",
 )
 
 import httpx  # noqa: E402

@@ -10,6 +10,7 @@ from app.audit import audit
 from app.auth.deps import current_user, load_campaign_for_editor, optional_user, require_role
 from app.campaigns.router import CampaignOut, campaign_out, latest_plan
 from app.db.base import get_db, utcnow
+from app.notifications import zapier_email
 from app.db.models import (
     Campaign,
     DonorUpdate,
@@ -145,12 +146,14 @@ def publish(update_id: str, user: User = Depends(current_user), db: Session = De
     retrieval.index(db, retrieval.doc_for_update(db, u))
     if u.reporting_request_id:
         runtime.dispatch(db, db.get(ReportingRequest, u.reporting_request_id), {"type": "close"})
-    # In-app notifications now; email delivery goes through the outbox (Zapier MCP, P1).
+    # In-app notifications always; email via Zapier MCP only when configured (see app/notifications/zapier_email.py).
     for sub in db.scalars(select(NotificationSubscription).where(NotificationSubscription.campaign_id == c.id)):
         key = f"update:{u.id}:donor:{sub.donor_user_id}:in_app"
         if db.scalar(select(Notification).where(Notification.idempotency_key == key)) is None:
             db.add(Notification(donor_user_id=sub.donor_user_id, donor_update_id=u.id, channel="in_app", status=DeliveryStatus.SENT, provider="in_app", idempotency_key=key, sent_at=utcnow()))
     audit(db, actor_type="user", actor_id=user.id, action="donor_update.publish", entity_type="donor_update", entity_id=u.id)
+    db.commit()  # publication is durable before any email goes out
+    zapier_email.deliver_update_emails(db, u, c)
     db.commit()
     return update_out(u)
 
