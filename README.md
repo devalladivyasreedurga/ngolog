@@ -93,6 +93,6 @@ Without `ANTHROPIC_API_KEY` the app runs in manual mode: the NGO enters claims a
 
 ## Repository
 
-`contracts/` shared schemas · `backend/app/` API · `backend/tests/` · `frontend/src/` · `docs/spec.md` product spec · `docs/decisions.md` design log
+`contracts/` shared schemas · `backend/app/` API · `backend/tests/` · `frontend/src/` · `docs/decisions.md` design log
 
 License: MIT (see `LICENSE`).
