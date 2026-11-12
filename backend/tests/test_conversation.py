@@ -109,7 +109,7 @@ def test_no_receipt_button_moves_on_without_calling_it_fraud(client, ai, ngo, pu
     thread = client.post(f"/api/claims/expense/{claim['id']}/no-evidence", json={"explanation": "I don't have one."}, headers=ngo).json()
     assert thread["claims"][0]["evidence_status"] == "not_documented"
     last = agent_msgs(thread)[-1]
-    assert "not documented" in last["content"] and "fraud" not in last["content"].lower()
+    assert "no receipt for" in last["content"] and "fraud" not in last["content"].lower()
     assert last["meta"]["awaiting"] == "ask_delivery"
 
 
@@ -300,7 +300,7 @@ def test_a_no_document_reply_asks_to_confirm_then_records_it(client, ai, ngo, pu
     thread = say(client, ngo, req_id, "yes")
     assert thread["claims"][0]["evidence_status"] == "not_documented"
     last = agent_msgs(thread)[-1]
-    assert "reported by you, not documented" in last["content"] and "fraud" not in last["content"].lower()
+    assert "no receipt for" in last["content"] and "your own report" in last["content"] and "fraud" not in last["content"].lower()
     assert sum(1 for m in thread["messages"] if m["sender_role"] == "ngo" and m["content"] == "yes") == 1
 
 
@@ -395,7 +395,7 @@ def test_a_stray_question_keeps_the_receipt_prompt_and_its_buttons(client, ai, n
     asked = agent_msgs(thread)[-1]
     thread = say(client, ngo, req_id, "what else can we do with the money?")
     last = agent_msgs(thread)[-1]
-    assert "can only help with your spending update" in last["content"] and "receipt or invoice for $500.00" in last["content"]
+    assert "can only help with your spending update" in last["content"] and "receipt for 25 school kits ($500.00)" in last["content"]
     assert last["meta"]["awaiting"] == "ask_receipt" and action_kinds(last) == action_kinds(asked)
     thread = say(client, ngo, req_id, "and what about the rest of the budget?")  # asked twice: no nested repeats
     assert agent_msgs(thread)[-1]["content"].count("can only help") == 1

@@ -207,7 +207,7 @@ def _receipt_prompt(claim: ExpenseClaim) -> tuple[str, dict]:
         {"kind": "upload", "label": "Upload receipt", "claim_type": "expense", "claim_id": claim.id},
         {"kind": "no_evidence", "label": "I don't have one", "claim_type": "expense", "claim_id": claim.id},
     ]
-    text = f"Do you have a receipt or invoice for {money(claim.amount_cents, claim.currency)} ({claim.description})?"
+    text = f"Do you have a receipt for {claim.description} ({money(claim.amount_cents, claim.currency)})?"
     return text, {"step": "request_more_information", "awaiting": "ask_receipt", "claim_id": claim.id, "actions": actions}
 
 
@@ -631,11 +631,11 @@ def record_no_evidence(db: Session, req: ReportingRequest, claim: ExpenseClaim |
     if echo:  # typed replies are already in the chat
         say(db, req, explanation, MessageSender.NGO, user_id=user_id, claim_id=claim.id)
     db.flush()
-    text = "Understood. Donors will see this as reported by you, not documented."
+    text = f"Okay, no receipt for {claim.description}. Donors will see it as your own report, with no documents."
     meta: dict = {"claim_id": claim.id}
     nxt = _what_next(db, req)
     if nxt:
-        text += " " + nxt[0]
+        text += "\n\n" + nxt[0]
         meta |= nxt[1]
     say(db, req, text, **meta)
 
