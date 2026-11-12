@@ -38,6 +38,9 @@ RECEIPTS = {
     # make the recording flag them as already submitted.
     "rehearsal-receipt-420.png": ("INV-2042", [("School kit, 21 units at $20.00", 420.00)]),
     "rehearsal-receipt-80.png": ("INV-2043", [("Kit carry bags, 40 units at $2.00", 80.00)]),
+    # A fresh pair for the final recording (new invoice numbers, never submitted before).
+    "video-receipt-420.png": ("INV-4042", [("School kit, 21 units at $20.00", 420.00)]),
+    "video-receipt-80.png": ("INV-4043", [("Kit carry bags, 40 units at $2.00", 80.00)]),
 }
 
 

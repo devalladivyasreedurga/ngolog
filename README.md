@@ -23,7 +23,7 @@ Rules the code enforces: totals come from Postgres, never from a model. The AI p
 
 ## Try it
 
-1. **Donor:** open `/signin`, click **Demo donor**, open *Supply 50 students with school kits*, and donate with a PayPal sandbox buyer account (create one at developer.paypal.com under Sandbox → Accounts).
+1. **Donor:** open `/signin`, click **Demo donor**, open *Supply 50 students with school kits*, and donate with this PayPal sandbox buyer account (fake money, sandbox only): email `sb-zyzym53724247@personal.example.com`, password `Mh!NV9*j`. To use your own, create a Personal account at developer.paypal.com under Sandbox → Accounts.
 2. **NGO:** sign out, click **Demo NGO**, open **Reporting** on the campaign and click **Start an update**. Updates need at least one donation, so do step 1 first.
    - Reply: "We bought 25 kits from Demo Stationers for $500 and handed out 20."
    - Confirm the proposed claims.
