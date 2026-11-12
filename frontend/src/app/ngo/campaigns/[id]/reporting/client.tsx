@@ -16,6 +16,15 @@ const ROUND_STATUS: Record<string, string> = {
   escalated: "With a reviewer",
 };
 
+const PILL: Record<string, string> = {
+  open: "bg-amber-100 text-amber-900",
+  in_review: "bg-stone-100 text-stone-700",
+  awaiting_approval: "bg-amber-100 text-amber-900",
+  completed: "bg-emerald-100 text-emerald-900",
+  overdue: "bg-stone-100 text-stone-700",
+  escalated: "bg-amber-100 text-amber-900",
+};
+
 type Action = { kind: string; label: string; claim_type?: string; claim_id?: string; amount?: number; href?: string };
 
 async function uploadEvidence(requestId: string, claimType: string, claimId: string, file: File): Promise<Thread> {
@@ -37,6 +46,7 @@ export default function Reporting() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [funded, setFunded] = useState<boolean | null>(null);
+  const [title, setTitle] = useState<string | null>(null);
 
   const run = useCallback(async (fn: () => Promise<Thread | void>) => {
     setBusy(true);
@@ -52,7 +62,12 @@ export default function Reporting() {
   }, []);
 
   useEffect(() => {
-    api<Campaign>(`/api/campaigns/${id}`).then((c) => setFunded(c.donations_received_cents > 0)).catch(() => setFunded(true));
+    api<Campaign>(`/api/campaigns/${id}`)
+      .then((c) => {
+        setFunded(c.donations_received_cents > 0);
+        setTitle(c.title);
+      })
+      .catch(() => setFunded(true));
     api<ReportingRequest[]>(`/api/campaigns/${id}/reporting-requests`)
       .then((rs) => {
         setRequests(rs);
@@ -65,13 +80,21 @@ export default function Reporting() {
 
   return (
     <Page>
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">Reporting</h1>
-        <span className="text-stone-500">{thread?.campaign_title}</span>
+      <Link href="/ngo/dashboard" className="text-sm text-emerald-800 hover:underline">← Your campaigns</Link>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold">{title ?? thread?.campaign_title ?? "Spending updates"}</h1>
+        {thread && funded !== false && (
+          <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${PILL[thread.request.status] ?? "bg-stone-100 text-stone-700"}`}>
+            {ROUND_STATUS[thread.request.status] ?? thread.request.status}
+          </span>
+        )}
         <span className="ml-auto" />
-        <Link href={`/ngo/campaigns/${id}/updates`} className="text-sm text-emerald-800 hover:underline">Donor updates →</Link>
-        <Button variant="secondary" onClick={trigger} disabled={busy || funded === false} title={funded === false ? "Updates start after the first donation" : undefined}>Start an update now</Button>
+        <Link href={`/ngo/campaigns/${id}/updates`} className="text-sm text-stone-600 hover:text-emerald-800 hover:underline">Donor updates →</Link>
+        <Button variant="secondary" onClick={trigger} disabled={busy || funded === false} title={funded === false ? "Updates start after the first donation" : undefined}>Start an update</Button>
       </div>
+      <p className="mt-0.5 text-sm text-stone-500">
+        {thread && funded !== false ? `Spending update · started ${new Date(thread.request.created_at + "Z").toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Spending updates"}
+      </p>
       <ErrorText error={error} />
       {requests.length > 1 && (
         <select className={`${inputClass} mt-3 max-w-xs`} onChange={(e) => run(() => api<Thread>(`/api/reporting-requests/${e.target.value}/thread`))}>
@@ -89,15 +112,49 @@ export default function Reporting() {
             : "No update has started. The assistant opens one on your schedule, or you can start one now."}
         </p>
       ) : (
-        <div className="mt-6 grid gap-4 lg:grid-cols-5">
+        <>
+        <Steps thread={thread} />
+        <div className="mt-4 grid gap-4 lg:grid-cols-5">
           <Conversation thread={thread} busy={busy} run={run} />
           <div className="space-y-4 lg:col-span-2">
             <Claims thread={thread} busy={busy} run={run} />
             <EvidenceList thread={thread} busy={busy} run={run} />
           </div>
         </div>
+        </>
       )}
     </Page>
+  );
+}
+
+const STEPS = ["Report", "Receipts", "Review", "Publish"];
+
+// Where this update is: tell what you spent, back it with receipts, review the draft, publish it.
+function Steps({ thread }: { thread: Thread }) {
+  const status = thread.request.status;
+  const reported = thread.claims.some((c) => c.status === "reported");
+  const current = status === "completed" ? 5 : status === "awaiting_approval" ? 3 : reported ? 2 : 1;
+  return (
+    <ol className="mt-4 flex items-center gap-2 text-xs" aria-label="Progress">
+      {STEPS.map((label, i) => {
+        const n = i + 1;
+        const done = n < current;
+        const now = n === current;
+        return (
+          <li key={label} className="flex flex-1 items-center gap-2 last:flex-none" aria-current={now ? "step" : undefined}>
+            <span
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${
+                done ? "border-emerald-600 bg-emerald-50 text-emerald-800" : now ? "border-emerald-700 bg-emerald-700 text-white" : "border-stone-300 text-stone-400"
+              }`}
+            >
+              {done ? "✓" : n}
+            </span>
+            <span className={done ? "text-stone-600" : now ? "font-medium text-stone-900" : "text-stone-400"}>{label}</span>
+            {n < STEPS.length && <span className="h-px flex-1 bg-stone-300" />}
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -129,11 +186,7 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
   }, [thread.messages.length, pending]);
   return (
     <Card className="lg:col-span-3">
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Your update</h2>
-        <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-700">{ROUND_STATUS[thread.request.status] ?? thread.request.status}</span>
-      </div>
-      <ol ref={listRef} className="mt-4 max-h-[28rem] space-y-3 overflow-y-auto">
+      <ol ref={listRef} className="max-h-[28rem] space-y-3 overflow-y-auto">
         {thread.messages.map((m, i) => (
           <li key={m.id} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-line ${i >= seen ? "msg-in" : ""} ${m.sender_role === "ngo" ? "ml-8 bg-emerald-50" : "mr-8 bg-stone-100"}`}>
             <p className="mb-1 text-xs font-medium text-stone-500">{m.sender_role === "ngo" ? "You" : "Assistant"}</p>
