@@ -15,7 +15,7 @@ import anthropic
 from pydantic import BaseModel
 
 from app.config import get_settings
-from contracts.reporting_schemas import ExtractedClaims, ReceiptExtraction
+from contracts.reporting_schemas import ClassifiedReply, ExtractedClaims, ReceiptExtraction
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ class AIProvider(Protocol):
     def draft_reporting_plan(self, title: str, category: str, description: str, activities: str) -> ReportingPlanDraft: ...
     def extract_claims(self, campaign_title: str, ngo_message: str) -> ExtractedClaims: ...
     def extract_receipt(self, data: bytes, media_type: str) -> ReceiptExtraction: ...
+    def classify_reply(self, campaign_title: str, open_question: str, ngo_message: str) -> ClassifiedReply: ...
 
 
 class ClaudeProvider:
@@ -100,6 +101,17 @@ class ClaudeProvider:
         )
         text = f"Campaign: {campaign_title}\n<ngo_message>\n{ngo_message}\n</ngo_message>"
         return self._parse(ExtractedClaims, system, [{"type": "text", "text": text}])
+
+    def classify_reply(self, campaign_title, open_question, ngo_message) -> ClassifiedReply:
+        system = (
+            "An NGO was asked a question about a receipt gap. Label its reply with exactly one intent: "
+            "explanation (explains the difference or adds context), no_document (says there is no receipt "
+            "or document, or one cannot be obtained, in any wording or language), new_report (reports a "
+            "different expense or something handed out), question (asks the assistant something or is off "
+            "topic, with or without a question mark), other. You only label; you never decide anything. " + UNTRUSTED_NOTE
+        )
+        text = f"Campaign: {campaign_title}\nQuestion that was asked: {open_question}\n<ngo_message>\n{ngo_message}\n</ngo_message>"
+        return self._parse(ClassifiedReply, system, [{"type": "text", "text": text}])
 
     def extract_receipt(self, data, media_type) -> ReceiptExtraction:
         system = (

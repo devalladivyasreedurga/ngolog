@@ -53,6 +53,7 @@ from contracts.reporting_schemas import (
     InvestigationStatus,
     MessageSender,
     PublicationStatus,
+    ReplyIntent,
     ReportingRequestStatus,
 )
 
@@ -277,6 +278,24 @@ NEW_REPORT_WORDS = re.compile(r"\b(also|another|bought|purchased|spent|paid|hand
 NO_DOCUMENT_WORDS = re.compile(
     r"\b(no (more )?(docs?|documents?|receipts?|invoices?|proof)|(don'?t|do not|dont) have|can'?t (find|provide|get)|cannot (find|provide)|lost (it|the))\b", re.I
 )
+def reply_intent(campaign_title: str, open_question: str, text: str) -> ReplyIntent:
+    """Label an NGO reply to a receipt question. Claude labels it; plain patterns are the fallback
+    when there is no AI or the call fails. Neither one sets an evidence status."""
+    ai = get_ai()
+    if ai is not None:
+        try:
+            return ai.classify_reply(campaign_title, open_question, text).intent
+        except AIUnavailable:
+            pass
+    if text.strip().endswith("?"):
+        return ReplyIntent.QUESTION
+    if NO_DOCUMENT_WORDS.search(text):
+        return ReplyIntent.NO_DOCUMENT
+    if NEW_REPORT_WORDS.search(text) and re.search(r"\d", text):
+        return ReplyIntent.NEW_REPORT
+    return ReplyIntent.EXPLANATION
+
+
 NOTHING_TO_REPORT = "No problem. There's nothing to report yet. Start an update again whenever you have something."
 
 
@@ -356,10 +375,18 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
     open_inv = db.scalar(
         select(Investigation).where(Investigation.campaign_id == campaign.id, Investigation.status == InvestigationStatus.OPEN)
     )
-    looks_new = bool(NEW_REPORT_WORDS.search(text) and re.search(r"\d", text))  # "we also bought 2 notebooks"
-    if open_inv is not None and awaiting == "ask_clarification" and not looks_new:
+    in_gap = open_inv is not None and awaiting in ("ask_clarification", "confirm_no_doc")
+    treat_as_new = False
+    if in_gap:
         keep = {"awaiting": awaiting, "actions": wmeta.get("actions", []), "claim_id": wmeta.get("claim_id")}
-        if text.strip().endswith("?"):  # a question, not an explanation: say what this chat is for
+        claim = db.get(ExpenseClaim, wmeta["claim_id"]) if wmeta.get("claim_id") else None
+        if awaiting == "confirm_no_doc" and claim is not None and _is(text, YES_WORDS):
+            record_no_evidence(db, req, claim, text, user_id, echo=False)  # the NGO said yes: now it is recorded
+            return
+        intent = reply_intent(campaign.title, open_inv.question, text)
+        if intent == ReplyIntent.NEW_REPORT:
+            treat_as_new = True  # fall through: it becomes proposed claims for the NGO to confirm
+        elif intent == ReplyIntent.QUESTION:
             say(
                 db,
                 req,
@@ -368,15 +395,27 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
                 **keep,
             )
             return
-        claim = db.get(ExpenseClaim, wmeta["claim_id"]) if wmeta.get("claim_id") else None
-        if claim is not None and NO_DOCUMENT_WORDS.search(text):  # "no doc", "I don't have one"
-            record_no_evidence(db, req, claim, text, user_id, echo=False)
+        elif intent == ReplyIntent.NO_DOCUMENT and claim is not None:
+            # The model only labelled the reply. Marking something not documented needs the NGO's yes.
+            say(
+                db,
+                req,
+                f"It sounds like there's no document for {claim.description}. Should I mark it as not documented? Donors will see it as reported by you.",
+                step="confirm_no_doc",
+                awaiting="confirm_no_doc",
+                claim_id=claim.id,
+                actions=[
+                    {"kind": "no_evidence", "label": "Yes, not documented", "claim_type": "expense", "claim_id": claim.id},
+                    {"kind": "upload", "label": "I'll upload one", "claim_type": "expense", "claim_id": claim.id},
+                ],
+            )
             return
-        # A reply to a clarification question: record it on the investigation; numbers
-        # only change when evidence or a confirmed claim changes.
-        open_inv.resolution = ((open_inv.resolution or "") + f"\nNGO reply: {text}").strip()
-        say(db, req, "Thanks, I've noted that. Upload a document and I'll re-check, or tell me if there isn't one.", step="note_reply", **keep)
-        return
+        else:
+            # An explanation: record it on the investigation; numbers only change when
+            # evidence or a confirmed claim changes.
+            open_inv.resolution = ((open_inv.resolution or "") + f"\nNGO reply: {text}").strip()
+            say(db, req, "Thanks, I've noted that. Upload a document and I'll re-check, or tell me if there isn't one.", step="note_reply", **keep)
+            return
 
     ai = get_ai()
     if ai is None:
@@ -419,7 +458,7 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
         say(db, req, f"How much did {missing_amount[0]} cost?", step="ask_amount", awaiting="ask_amount", description=missing_amount[0])
         return
     if not _proposed(db, req):
-        if open_inv is not None and awaiting == "ask_clarification":  # still on the receipt question
+        if treat_as_new:  # still on the receipt question
             say(db, req, "Thanks, I've noted that. Upload a document and I'll re-check, or tell me if there isn't one.", step="note_reply", awaiting=awaiting, actions=wmeta.get("actions", []), claim_id=wmeta.get("claim_id"))
             return
         say(db, req, "I didn't catch anything spent or done yet. What did you spend campaign money on?", step="open", awaiting="ask_spend")

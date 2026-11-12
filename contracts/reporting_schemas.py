@@ -165,6 +165,20 @@ class ReceiptLineItem(BaseModel):
     amount: float | None = None
 
 
+class ReplyIntent(StrEnum):
+    """What an NGO's reply to a receipt question is. A label only: it never sets an evidence status."""
+
+    EXPLANATION = "explanation"  # explains the difference or adds context
+    NO_DOCUMENT = "no_document"  # says there is no receipt/document or one cannot be obtained
+    NEW_REPORT = "new_report"  # reports a different expense or something handed out
+    QUESTION = "question"  # asks the assistant something or is off topic
+    OTHER = "other"
+
+
+class ClassifiedReply(BaseModel):
+    intent: ReplyIntent
+
+
 class ReceiptExtraction(BaseModel):
     merchant: str | None = None
     receipt_number: str | None = None

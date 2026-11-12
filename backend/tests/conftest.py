@@ -111,6 +111,20 @@ class FakeAI:
             impacts.append(ExtractedImpact(description="kits distributed to students", quantity=float(d.group(1)), unit="kits"))
         return ExtractedClaims(is_report="?" not in ngo_message, expenses=expenses, impacts=impacts)
 
+    def classify_reply(self, campaign_title, open_question, ngo_message):
+        from contracts.reporting_schemas import ClassifiedReply, ReplyIntent
+
+        t = ngo_message.lower()
+        if "?" in t:
+            intent = ReplyIntent.QUESTION
+        elif "nope" in t or "no doc" in t or "threw it away" in t or "dont have" in t:
+            intent = ReplyIntent.NO_DOCUMENT
+        elif "bought" in t or "handed out" in t:
+            intent = ReplyIntent.NEW_REPORT
+        else:
+            intent = ReplyIntent.EXPLANATION
+        return ClassifiedReply(intent=intent)
+
     def extract_receipt(self, data, media_type):
         m = re.search(rb"TOTAL=(\d+(?:\.\d+)?)", data)
         n = re.search(rb"NO=(\w+)", data)

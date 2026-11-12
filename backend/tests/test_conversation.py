@@ -291,13 +291,50 @@ def test_an_explanation_keeps_the_buttons_so_the_ngo_is_not_stuck(client, ai, ng
     assert action_kinds(last) == action_kinds(gap and agent_msgs(gap)[-1])
 
 
-def test_typing_no_doc_closes_the_receipt_question_as_not_documented(client, ai, ngo, published_campaign):
+def test_a_no_document_reply_asks_to_confirm_then_records_it(client, ai, ngo, published_campaign):
     req_id, claim, _ = _gap(client, ai, ngo, published_campaign)
-    thread = say(client, ngo, req_id, "no doc")
+    thread = say(client, ngo, req_id, "nope, we threw it away")  # wording no keyword list would catch
+    assert thread["claims"][0]["evidence_status"] == "needs_clarification"  # a label alone changes nothing
+    ask = agent_msgs(thread)[-1]
+    assert ask["meta"]["awaiting"] == "confirm_no_doc" and "no_evidence" in action_kinds(ask)
+    thread = say(client, ngo, req_id, "yes")
     assert thread["claims"][0]["evidence_status"] == "not_documented"
     last = agent_msgs(thread)[-1]
     assert "reported by you, not documented" in last["content"] and "fraud" not in last["content"].lower()
-    assert sum(1 for m in thread["messages"] if m["sender_role"] == "ngo" and m["content"] == "no doc") == 1  # not echoed twice
+    assert sum(1 for m in thread["messages"] if m["sender_role"] == "ngo" and m["content"] == "yes") == 1
+
+
+def test_the_confirm_button_records_not_documented(client, ai, ngo, published_campaign):
+    req_id, claim, _ = _gap(client, ai, ngo, published_campaign)
+    say(client, ngo, req_id, "no doc")
+    thread = client.post(f"/api/claims/expense/{claim['id']}/no-evidence", json={"explanation": "I don't have one."}, headers=ngo).json()
+    assert thread["claims"][0]["evidence_status"] == "not_documented"
+
+
+def test_without_ai_the_plain_patterns_still_classify_replies(client, no_ai, ngo, published_campaign):
+    from app.agent.workflow import reply_intent
+    from contracts.reporting_schemas import ReplyIntent
+
+    assert reply_intent("c", "q", "no doc") == ReplyIntent.NO_DOCUMENT
+    assert reply_intent("c", "q", "can we spend it elsewhere?") == ReplyIntent.QUESTION
+    assert reply_intent("c", "q", "we also bought 2 pens") == ReplyIntent.NEW_REPORT
+    assert reply_intent("c", "q", "a discount applied") == ReplyIntent.EXPLANATION
+
+
+def test_if_the_ai_call_fails_the_patterns_take_over(client, ngo, published_campaign):
+    from app.agent.llm import AIUnavailable, set_ai_provider
+    from app.agent.workflow import reply_intent
+    from contracts.reporting_schemas import ReplyIntent
+
+    class Down:
+        def classify_reply(self, *a):
+            raise AIUnavailable("down")
+
+    set_ai_provider(Down())
+    try:
+        assert reply_intent("c", "q", "no doc") == ReplyIntent.NO_DOCUMENT
+    finally:
+        set_ai_provider(None)
 
 
 def test_a_new_expense_during_a_receipt_question_is_not_swallowed(client, ai, ngo, published_campaign):

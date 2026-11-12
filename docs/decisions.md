@@ -24,3 +24,10 @@ Newest first. One line of decision, one line of why.
 - **Auth is demo passwordless sign-in with HMAC-signed tokens**; reviewer role only for `REVIEWER_EMAILS`. Replace before any real use.
 - **SQLite for local dev and tests, Postgres on Render**, same SQLAlchemy models and Alembic migrations (`render_as_batch` for SQLite).
 - **Claude model `claude-opus-5-5`** with structured outputs and server-side refusal fallback (`fallbacks: "default"`). Without `ANTHROPIC_API_KEY` the app runs in manual mode.
+
+## Reply intent: Claude labels, plain code decides
+
+While a receipt question is open, Claude labels the NGO's reply (explanation, no_document, new_report, question, other).
+The label only routes the chat. It never sets an evidence status: a `no_document` label makes the assistant ask
+"Should I mark it as not documented?" and the claim changes only after the NGO taps yes (or types yes). The earlier
+keyword patterns remain only as a fallback when there is no API key or the call fails.
