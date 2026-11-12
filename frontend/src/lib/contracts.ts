@@ -90,6 +90,7 @@ export interface Claim {
   evidence_status: EvidenceReviewStatus;
   supported_amount_cents: number | null;
   evidence_ids: string[];
+  report_id: string | null;
 }
 
 export interface Evidence {

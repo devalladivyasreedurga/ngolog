@@ -129,6 +129,7 @@ def claim_out(db: Session, c: ExpenseClaim | ImpactClaim) -> ClaimOut:
         status=ClaimStatus(c.status), evidence_status=EvidenceReviewStatus(c.evidence_status),
         supported_amount_cents=c.supported_amount_cents if is_exp else None,
         evidence_ids=[e.id for e in linked_evidence(db, ctype, c.id)],
+        report_id=c.activity_report_id,
     )
 
 

@@ -300,18 +300,9 @@ function Claims({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run
       <h2 className="font-semibold">What you reported</h2>
       <p className="mt-0.5 text-xs text-stone-500">Use the buttons in the chat to confirm or add receipts.</p>
       {live.length === 0 && <p className="mt-2 text-sm text-stone-500">Nothing yet.</p>}
-      {(["expense", "impact"] as const).map((kind) => {
-        const rows = live.filter((c) => c.claim_type === kind);
-        if (rows.length === 0) return null;
-        return (
-          <div key={kind} className="mt-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{kind === "expense" ? "Spent" : "Handed out"}</p>
-            <ul className="mt-2 space-y-2">
-              {rows.map((c) => <ClaimRow key={c.id} claim={c} />)}
-            </ul>
-          </div>
-        );
-      })}
+      <ul className="mt-3 space-y-2">
+        {groupClaims(live).map((g) => <ClaimCard key={g[0].id} claims={g} />)}
+      </ul>
       <details className="mt-4 border-t border-stone-100 pt-3">
       <summary className="cursor-pointer text-sm text-emerald-800">Add manually</summary>
       <form
@@ -345,22 +336,41 @@ function Claims({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run
   );
 }
 
-function ClaimRow({ claim }: { claim: Claim }) {
+// Claims that came from the same message (the purchase and the handing out) read as one thing.
+function groupClaims(claims: Claim[]): Claim[][] {
+  const groups = new Map<string, Claim[]>();
+  for (const c of claims) {
+    const key = c.report_id ?? c.id;
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  return [...groups.values()].map((g) => [...g].sort((a, b) => Number(b.claim_type === "expense") - Number(a.claim_type === "expense")));
+}
+
+function ClaimCard({ claims }: { claims: Claim[] }) {
+  const expenses = claims.filter((c) => c.claim_type === "expense");
+  const impacts = claims.filter((c) => c.claim_type !== "expense");
+  const title = (expenses[0] ?? impacts[0]).description;
+  const waiting = claims.some((c) => c.status === "proposed");
   return (
     <li className="rounded-lg border border-stone-200 p-3 text-sm">
-      <p className="font-medium">{claim.description}</p>
-      {claim.claim_type === "expense" ? (
-        <p className="text-stone-600">
-          Reported {money(claim.amount_cents, claim.currency ?? "USD")} · receipts match {money(claim.supported_amount_cents, claim.currency ?? "USD")}
+      <p className="font-medium">{title}</p>
+      {expenses.map((c) => (
+        <div key={c.id} className="mt-1 text-stone-600">
+          <p>
+            {expenses.length > 1 && <span className="text-stone-800">{c.description}: </span>}
+            Bought for {money(c.amount_cents, c.currency ?? "USD")} · receipts match {money(c.supported_amount_cents, c.currency ?? "USD")}
+          </p>
+          <div className="mt-1">
+            <StatusBadge status={c.evidence_status} />
+          </div>
+        </div>
+      ))}
+      {impacts.map((c) => (
+        <p key={c.id} className="mt-1 text-stone-600">
+          {c.quantity != null ? `Handed out: ${c.quantity} ${c.unit ?? ""}`.trim() : c.description}
         </p>
-      ) : (
-        claim.quantity != null &&
-        !claim.description.includes(String(claim.quantity)) && <p className="text-stone-600">{`${claim.quantity} ${claim.unit ?? ""}`}</p>
-      )}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        {(claim.claim_type === "expense" || claim.evidence_status !== "reported") && <StatusBadge status={claim.evidence_status} />}
-        {claim.status === "proposed" && <span className="text-xs text-amber-800">Waiting for your OK in the chat</span>}
-      </div>
+      ))}
+      {waiting && <p className="mt-2 text-xs text-amber-800">Waiting for your OK in the chat</p>}
     </li>
   );
 }

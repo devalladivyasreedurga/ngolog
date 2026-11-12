@@ -379,3 +379,10 @@ def test_a_resurfaced_gap_has_a_lead_in_and_an_impact_phrase_keeps_one_number():
     from app.db.models import ImpactClaim
 
     assert _phrase(ImpactClaim(description="20 kits handed out to students", quantity=20.0, unit="kits")) == "20 kits handed out to students"
+
+
+def test_claims_from_one_message_share_a_report_id_so_the_panel_can_show_them_together(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    thread = say(client, ngo, req_id, "We bought 25 school kits for $500 and distributed 20.")
+    ids = {c["claim_type"]: c["report_id"] for c in thread["claims"]}
+    assert ids["expense"] and ids["expense"] == ids["impact"]

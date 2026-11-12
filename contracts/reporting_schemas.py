@@ -216,6 +216,7 @@ class ClaimOut(BaseModel):
     evidence_status: EvidenceReviewStatus
     supported_amount_cents: int | None = None
     evidence_ids: list[str] = []
+    report_id: str | None = None  # the NGO message the claim came from; claims from one message are shown together
 
 
 class EvidenceCheckOut(BaseModel):
