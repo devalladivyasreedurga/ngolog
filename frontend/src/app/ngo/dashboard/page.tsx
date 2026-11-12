@@ -21,7 +21,8 @@ export default function NgoDashboard() {
       const list = await api<Campaign[]>("/api/campaigns?mine=true");
       setCampaigns(list);
       const latest = await Promise.all(list.map((c) => api<ReportingRequest[]>(`/api/campaigns/${c.id}/reporting-requests`).then((rs) => [c.id, rs[0]] as const).catch(() => [c.id, undefined] as const)));
-      setWaiting(Object.fromEntries(latest.map(([id, r]) => [id, r?.status === "open" || r?.status === "overdue"])));
+      const funded = new Set(list.filter((c) => c.donations_received_cents > 0).map((c) => c.id));
+      setWaiting(Object.fromEntries(latest.map(([id, r]) => [id, funded.has(id) && (r?.status === "open" || r?.status === "overdue")])));
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setHasNgo(false);
       else setError((e as Error).message);

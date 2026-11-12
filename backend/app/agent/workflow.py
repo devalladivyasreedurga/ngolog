@@ -34,6 +34,7 @@ from app.db.models import (
     AgentMessage,
     AgentThread,
     Campaign,
+    Donation,
     DonorUpdate,
     Evidence,
     EvidenceCheck,
@@ -46,6 +47,7 @@ from contracts.reporting_schemas import (
     CheckStatus,
     CheckType,
     ClaimStatus,
+    DonationStatus,
     EvidenceReviewStatus,
     EvidenceVisibility,
     InvestigationStatus,
@@ -53,6 +55,15 @@ from contracts.reporting_schemas import (
     PublicationStatus,
     ReportingRequestStatus,
 )
+
+def campaign_has_donations(db: Session, campaign_id: str) -> bool:
+    """Nothing to report on until PayPal has confirmed at least one donation."""
+    return db.scalar(
+        select(Donation.id)
+        .where(Donation.campaign_id == campaign_id, Donation.status.in_((DonationStatus.CAPTURED, DonationStatus.COMPLETED)))
+        .limit(1)
+    ) is not None
+
 
 OPEN_REQUEST_STATUSES = (
     ReportingRequestStatus.OPEN,

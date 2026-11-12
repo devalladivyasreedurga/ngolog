@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, ErrorText, inputClass, Page, StatusBadge } from "@/components/ui";
 import { api, API_URL, getToken } from "@/lib/api";
-import { money, type Claim, type Evidence, type ReportingRequest, type Thread } from "@/lib/contracts";
+import { money, type Campaign, type Claim, type Evidence, type ReportingRequest, type Thread } from "@/lib/contracts";
 
 const ROUND_STATUS: Record<string, string> = {
   open: "Waiting for your reply",
@@ -36,6 +36,7 @@ export default function Reporting() {
   const [thread, setThread] = useState<Thread | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [funded, setFunded] = useState<boolean | null>(null);
 
   const run = useCallback(async (fn: () => Promise<Thread | void>) => {
     setBusy(true);
@@ -51,6 +52,7 @@ export default function Reporting() {
   }, []);
 
   useEffect(() => {
+    api<Campaign>(`/api/campaigns/${id}`).then((c) => setFunded(c.donations_received_cents > 0)).catch(() => setFunded(true));
     api<ReportingRequest[]>(`/api/campaigns/${id}/reporting-requests`)
       .then((rs) => {
         setRequests(rs);
@@ -68,7 +70,7 @@ export default function Reporting() {
         <span className="text-stone-500">{thread?.campaign_title}</span>
         <span className="ml-auto" />
         <Link href={`/ngo/campaigns/${id}/updates`} className="text-sm text-emerald-800 hover:underline">Donor updates →</Link>
-        <Button variant="secondary" onClick={trigger} disabled={busy}>Start an update now</Button>
+        <Button variant="secondary" onClick={trigger} disabled={busy || funded === false} title={funded === false ? "Updates start after the first donation" : undefined}>Start an update now</Button>
       </div>
       <ErrorText error={error} />
       {requests.length > 1 && (
@@ -80,8 +82,12 @@ export default function Reporting() {
           ))}
         </select>
       )}
-      {!thread ? (
-        <p className="mt-6 text-stone-500">No reporting request yet. The assistant opens one on your update schedule, or run one now.</p>
+      {!thread || funded === false ? (
+        <p className="mt-6 max-w-xl text-stone-600">
+          {funded === false
+            ? "No donations yet, so there is nothing to report. The assistant starts asking for updates after the campaign receives its first donation."
+            : "No update has started. The assistant opens one on your schedule, or you can start one now."}
+        </p>
       ) : (
         <div className="mt-6 grid gap-4 lg:grid-cols-5">
           <Conversation thread={thread} busy={busy} run={run} />

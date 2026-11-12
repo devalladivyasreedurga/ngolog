@@ -1,10 +1,12 @@
 """Idempotency, authorization and labelling rules from spec section 10."""
 
-from tests.conftest import capture_webhook, login, png, webhook_headers
+from tests.conftest import capture_webhook, fund_campaign, login, png, webhook_headers
 from tests.test_vertical_slice import donate, upload
 
 
 def open_request(client, ngo, cid, key="demo-1"):
+    if client.get(f"/api/campaigns/{cid}").json()["donations_received_cents"] == 0:
+        fund_campaign(client, cid)
     return client.post(f"/api/campaigns/{cid}/reporting-requests/trigger", json={"cycle_key": key}, headers=ngo).json()["request"]["id"]
 
 

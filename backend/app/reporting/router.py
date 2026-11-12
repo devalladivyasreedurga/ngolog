@@ -202,6 +202,8 @@ def trigger(campaign_id: str, body: TriggerIn, user: User = Depends(current_user
     c = load_campaign_for_editor(db, user, campaign_id)
     if c.status != CampaignStatus.PUBLISHED:
         raise HTTPException(409, "Publish the campaign first")
+    if not workflow.campaign_has_donations(db, c.id):
+        raise HTTPException(409, "No donations yet, so there is nothing to report. Updates start after the first donation.")
     req, _ = workflow.open_reporting_request(db, c, cycle_key=body.cycle_key, actor_id=user.id)
     runtime.start_cycle(db, req)
     db.commit()

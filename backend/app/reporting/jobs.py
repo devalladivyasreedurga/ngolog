@@ -56,6 +56,10 @@ def run_due_followups(db: Session, now: datetime | None = None) -> int:
     opened = 0
     for campaign in due:
         next_at = now + timedelta(days=campaign.reporting_frequency_days)
+        if not workflow.campaign_has_donations(db, campaign.id):  # nothing donated, nothing to report yet
+            campaign.next_followup_at = next_at
+            db.commit()
+            continue
         unfinished = db.scalar(
             select(ReportingRequest).where(ReportingRequest.campaign_id == campaign.id, ReportingRequest.status.in_(BLOCKING_STATUSES))
         )

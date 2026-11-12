@@ -171,6 +171,19 @@ def client(tmp_path):
     engine.dispose()
 
 
+def fund_campaign(client, campaign_id, cents=2500):
+    """Record one counted donation straight in the test database (the PayPal flow has its own tests)."""
+    from app.db.models import Donation, User
+    from contracts.reporting_schemas import DonationStatus
+
+    login(client, "funder@example.com", "donor")
+    db = next(app.dependency_overrides[get_db]())
+    donor = db.query(User).filter_by(email="funder@example.com").one()
+    db.add(Donation(campaign_id=campaign_id, donor_user_id=donor.id, amount_cents=cents, status=DonationStatus.CAPTURED))
+    db.commit()
+    db.close()
+
+
 def login(client, email, role) -> dict:
     r = client.post("/api/auth/demo-login", json={"email": email, "role": role})
     assert r.status_code == 200, r.text

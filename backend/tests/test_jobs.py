@@ -9,7 +9,7 @@ from app.db.base import get_db, utcnow
 from app.db.models import AgentMessage, Campaign, OutboundMessage, ReportingRequest
 from app.main import app
 from app.reporting import jobs
-from tests.conftest import login
+from tests.conftest import fund_campaign, login
 from tests.test_safeguards import open_request
 
 
@@ -32,7 +32,19 @@ def _request(db, cid):
     return db.scalars(select(ReportingRequest).where(ReportingRequest.campaign_id == cid)).one()
 
 
+def test_nothing_is_asked_until_the_campaign_has_a_donation(client, db, ngo, published_campaign):
+    _make_due(db, published_campaign)
+    assert jobs.run_due_followups(db) == 0  # scheduler: no donations, no round
+    assert db.get(Campaign, published_campaign).next_followup_at > utcnow()
+    r = client.post(f"/api/campaigns/{published_campaign}/reporting-requests/trigger", json={}, headers=ngo)
+    assert r.status_code == 409 and "No donations yet" in r.json()["detail"]  # demo button: same rule
+    fund_campaign(client, published_campaign)
+    _make_due(db, published_campaign)
+    assert jobs.run_due_followups(db) == 1
+
+
 def test_due_campaign_gets_one_request_however_often_the_job_runs(client, db, published_campaign):
+    fund_campaign(client, published_campaign)
     _make_due(db, published_campaign)
     assert jobs.run_due_followups(db) == 1
     _make_due(db, published_campaign)
