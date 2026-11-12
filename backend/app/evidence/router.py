@@ -142,7 +142,7 @@ async def upload(
     dups = find_exact_duplicates(db, ev, ngo_campaign_ids)
     if dups:
         db.add(EvidenceCheck(evidence_id=ev.id, check_type=CheckType.EXACT_DUPLICATE, status=CheckStatus.FLAG, findings_json={"matching_evidence_ids": [d.id for d in dups], "note": "Identical file uploaded before. A lead for review, not proof of wrongdoing."}))
-        if claim is None:  # a linked claim gets one combined question instead
+        if claim is None and kind != EvidenceKind.PHOTO:  # a linked claim gets one combined question instead
             workflow.say(db, req, "This file is identical to one uploaded earlier, so I won't count it twice. If that was a mistake, upload the intended document.", step="evaluate_evidence", evidence_id=ev.id)
 
     if kind in (EvidenceKind.RECEIPT, EvidenceKind.PAYMENT_CONFIRMATION):
@@ -160,6 +160,8 @@ async def upload(
             workflow.say(db, req, f"I couldn't read \"{ev.original_filename}\" automatically. Please type the total shown on it.", step="request_more_information", evidence_id=ev.id)
 
     review_evidence(db, req, ev)
+    if kind == EvidenceKind.PHOTO:
+        workflow.photo_received(db, req, ev.original_filename, duplicate=bool(dups))
     audit(db, actor_type="user", actor_id=user.id, action="evidence.upload", entity_type="evidence", entity_id=ev.id, new={"sha256": ev.sha256, "kind": kind, "claim_id": claim_id})
     db.flush()
     runtime.dispatch(db, req, {"type": "evidence", "evidence_id": ev.id})

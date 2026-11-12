@@ -109,13 +109,16 @@ class FakeAI:
         d = re.search(r"(?:distributed|handed out) (\d+)", ngo_message)
         if d:
             impacts.append(ExtractedImpact(description="kits distributed to students", quantity=float(d.group(1)), unit="kits"))
-        return ExtractedClaims(is_report="?" not in ngo_message, expenses=expenses, impacts=impacts)
+        shares = bool(re.search(r"pictures|photos", ngo_message))
+        return ExtractedClaims(is_report="?" not in ngo_message and not shares, wants_to_share_files=shares, expenses=expenses, impacts=impacts)
 
     def classify_reply(self, campaign_title, open_question, ngo_message):
         from contracts.reporting_schemas import ClassifiedReply, ReplyIntent
 
         t = ngo_message.lower()
-        if "?" in t:
+        if "pictures" in t or "photos" in t:
+            intent = ReplyIntent.SHARE_FILES
+        elif "?" in t:
             intent = ReplyIntent.QUESTION
         elif "nope" in t or "no doc" in t or "threw it away" in t or "dont have" in t:
             intent = ReplyIntent.NO_DOCUMENT

@@ -153,6 +153,7 @@ class ExtractedClaims(BaseModel):
     """Proposed structured claims from an NGO's free-text reply. Never saved as
     'reported' until the NGO confirms them."""
 
+    wants_to_share_files: bool = False  # the NGO asks about or offers photos, pictures or other files
     is_report: bool = True  # False for questions, small talk or anything that is not a spending/activity report
     expenses: list[ExtractedExpense] = []
     impacts: list[ExtractedImpact] = []
@@ -171,6 +172,7 @@ class ReplyIntent(StrEnum):
     EXPLANATION = "explanation"  # explains the difference or adds context
     NO_DOCUMENT = "no_document"  # says there is no receipt/document or one cannot be obtained
     NEW_REPORT = "new_report"  # reports a different expense or something handed out
+    SHARE_FILES = "share_files"  # asks about, or offers, photos or other files
     QUESTION = "question"  # asks the assistant something or is off topic
     OTHER = "other"
 

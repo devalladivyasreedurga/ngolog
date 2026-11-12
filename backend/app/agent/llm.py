@@ -97,7 +97,8 @@ class ClaudeProvider:
             "expense, leave amount null (never 0). Set amount_uncertain only when the NGO "
             "explicitly hedges. Leave unanswered_questions empty. Set is_report to false when the "
             "message is a question, small talk or anything that does not describe money spent or "
-            "something done, and then leave expenses and impacts empty. " + UNTRUSTED_NOTE
+            "something done, and then leave expenses and impacts empty. Set wants_to_share_files to true when "
+            "the NGO asks about or offers to show photos, pictures, documents or other files. " + UNTRUSTED_NOTE
         )
         text = f"Campaign: {campaign_title}\n<ngo_message>\n{ngo_message}\n</ngo_message>"
         return self._parse(ExtractedClaims, system, [{"type": "text", "text": text}])
@@ -107,7 +108,7 @@ class ClaudeProvider:
             "An NGO was asked a question about a receipt gap. Label its reply with exactly one intent: "
             "explanation (explains the difference or adds context), no_document (says there is no receipt "
             "or document, or one cannot be obtained, in any wording or language), new_report (reports a "
-            "different expense or something handed out), question (asks the assistant something or is off "
+            "different expense or something handed out), share_files (asks about or offers to show photos, pictures or other files), question (asks the assistant something or is off "
             "topic, with or without a question mark), other. You only label; you never decide anything. " + UNTRUSTED_NOTE
         )
         text = f"Campaign: {campaign_title}\nQuestion that was asked: {open_question}\n<ngo_message>\n{ngo_message}\n</ngo_message>"

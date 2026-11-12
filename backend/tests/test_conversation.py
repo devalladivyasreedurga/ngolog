@@ -422,3 +422,59 @@ def test_a_stray_question_while_asked_about_handing_out_keeps_that_question(clie
     thread = say(client, ngo, req_id, "why do you ask?")
     last = agent_msgs(thread)[-1]
     assert "handed out" in last["content"] and last["meta"]["awaiting"] == "ask_delivery"
+
+
+def _photo(client, ngo, req_id, marker, claim=None, name="items.png"):
+    form = {"reporting_request_id": req_id, "kind": "photo"}
+    if claim:
+        form |= {"claim_type": claim["claim_type"], "claim_id": claim["id"]}
+    r = client.post("/api/evidence/upload", data=form, files={"file": (name, png(marker), "image/png")}, headers=ngo)
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_asking_to_show_photos_gets_a_yes_and_keeps_the_pending_question(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo)
+    thread = say(client, ngo, req_id, "can I instead show you pictures of the donated items and the people")
+    last = agent_msgs(thread)[-1]
+    assert "you can add photos" in last["content"] and "don't replace a receipt" in last["content"]
+    assert last["meta"]["awaiting"] == "ask_receipt" and "receipt for 25 school kits" in last["content"]
+    assert action_kinds(last) == ["upload", "no_evidence", "upload_photo"]
+
+
+def test_a_photo_is_kept_but_never_counts_as_proof_or_as_a_receipt(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500 and distributed 20.")
+    thread = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()
+    impact = next(c for c in thread["claims"] if c["claim_type"] == "impact")
+    expense = next(c for c in thread["claims"] if c["claim_type"] == "expense")
+    thread = _photo(client, ngo, req_id, "PHOTO-1", claim=impact)
+    last = agent_msgs(thread)[-1]
+    assert "photo added" in last["content"] and last["meta"]["awaiting"] == "ask_receipt"  # the receipt question is still open
+    assert "upload" in action_kinds(last)
+    assert any(e["kind"] == "photo" for e in thread["evidence"])
+    shown = next(c for c in thread["claims"] if c["id"] == impact["id"])
+    assert shown["evidence_status"] == "submitted"  # "documents received", never "consistent"
+    exp_now = next(c for c in thread["claims"] if c["id"] == expense["id"])
+    assert exp_now["evidence_status"] == "reported" and exp_now["supported_amount_cents"] in (0, None)
+    thread = _photo(client, ngo, req_id, "PHOTO-1", name="again.png")  # same photo again
+    assert "identical to one already added" in agent_msgs(thread)[-1]["content"]
+
+
+def test_without_ai_a_photo_message_is_still_recognised(client, no_ai):
+    from app.agent.workflow import reply_intent
+    from contracts.reporting_schemas import ReplyIntent
+
+    assert reply_intent("c", "q", "can I show you pictures of the people") == ReplyIntent.SHARE_FILES
+
+
+def test_notes_are_never_nested_when_a_stray_question_is_followed_by_a_photo_question(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo)
+    say(client, ngo, req_id, "what else can we do with the money?")
+    thread = say(client, ngo, req_id, "can I instead show you pictures of the donated items")
+    text = agent_msgs(thread)[-1]["content"]
+    assert text.count("can only help") == 0 and text.count("you can add photos") == 1 and "receipt for 25 school kits" in text

@@ -39,6 +39,48 @@ async function uploadEvidence(requestId: string, claimType: string, claimId: str
   return (await res.json()) as Thread;
 }
 
+async function uploadPhoto(requestId: string, file: File, claim?: Claim): Promise<Thread> {
+  const form = new FormData();
+  form.set("reporting_request_id", requestId);
+  form.set("kind", "photo");
+  if (claim) {
+    form.set("claim_type", claim.claim_type);
+    form.set("claim_id", claim.id);
+  }
+  form.set("file", file);
+  const res = await fetch(`${API_URL}/api/evidence/upload`, { method: "POST", body: form, headers: { Authorization: `Bearer ${getToken()}` } });
+  if (!res.ok) throw new Error((await res.json()).detail ?? "Upload failed");
+  return (await res.json()) as Thread;
+}
+
+// Photos attach to what was handed out when there is such a claim. They never count as receipts.
+function PhotoPicker({ thread, busy, run, onPending, className, children }: { thread: Thread; busy: boolean; run: Run; onPending: (t: string) => void; className: string; children: React.ReactNode }) {
+  const handed = thread.claims.find((c) => c.claim_type === "impact" && c.status === "reported");
+  return (
+    <label className={`${className} cursor-pointer ${busy ? "pointer-events-none opacity-50" : ""}`}>
+      {children}
+      <input
+        type="file"
+        multiple
+        className="hidden"
+        accept="image/jpeg,image/png,image/webp"
+        disabled={busy}
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = "";
+          if (files.length === 0) return;
+          onPending(files.length === 1 ? `Sending ${files[0].name}…` : `Sending ${files.length} photos…`);
+          run(async () => {
+            let t: Thread | undefined;
+            for (const f of files) t = await uploadPhoto(thread.request.id, f, handed);
+            return t;
+          });
+        }}
+      />
+    </label>
+  );
+}
+
 export default function Reporting() {
   const { id } = useParams<{ id: string }>();
   const [requests, setRequests] = useState<ReportingRequest[]>([]);
@@ -240,6 +282,9 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
               {label}
             </button>
           ))}
+          <PhotoPicker thread={thread} busy={busy} run={chatRun} onPending={setPending} className="rounded-full bg-stone-100 px-3 py-1 text-stone-700 hover:bg-stone-200">
+            + Add photos
+          </PhotoPicker>
         </div>
       )}
     </Card>
@@ -327,6 +372,10 @@ function QuickReplies({ thread, busy, run, onPending }: { thread: Thread; busy: 
               }}
             />
           </label>
+        ) : a.kind === "upload_photo" ? (
+          <PhotoPicker key={a.label} thread={thread} busy={busy} run={run} onPending={onPending} className={chip}>
+            {a.label}
+          </PhotoPicker>
         ) : a.kind === "link" ? (
           <Link key={a.label} href={`/ngo/campaigns/${thread.campaign_id}/${a.href}`} className={chip}>
             {a.label}

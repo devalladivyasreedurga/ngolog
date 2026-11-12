@@ -287,6 +287,8 @@ def reply_intent(campaign_title: str, open_question: str, text: str) -> ReplyInt
             return ai.classify_reply(campaign_title, open_question, text).intent
         except AIUnavailable:
             pass
+    if SHARE_FILES_WORDS.search(text):
+        return ReplyIntent.SHARE_FILES
     if text.strip().endswith("?"):
         return ReplyIntent.QUESTION
     if NO_DOCUMENT_WORDS.search(text):
@@ -297,6 +299,7 @@ def reply_intent(campaign_title: str, open_question: str, text: str) -> ReplyInt
 
 
 BARE_AMOUNT = re.compile(r"(?:usd\s*)?\$?\s*\d[\d,]*(?:\.\d{1,2})?\s*(?:\$|usd|dollars?)?", re.I)
+SHARE_FILES_WORDS = re.compile(r"\b(photos?|pictures?|images?|pics?)\b", re.I)
 NOTHING_TO_REPORT = "No problem. There's nothing to report yet. Start an update again whenever you have something."
 
 
@@ -318,18 +321,55 @@ SCOPE_REPLY = "I can only help with your spending update, so I can't answer that
 
 
 def _last_agent_text(db: Session, req: ReportingRequest) -> str:
-    return db.scalar(
+    text = db.scalar(
         select(AgentMessage.content)
         .where(AgentMessage.thread_id == thread_for(db, req).id, AgentMessage.sender_role == MessageSender.AGENT)
         .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
     ) or ""
+    return _strip_notes(text)
+
+
+def _strip_notes(text: str) -> str:
+    """The pending question without the scope or photo notes an earlier reply put in front of it."""
+    text = text.replace(SCOPE_REPLY, "")
+    text = text.replace(f"Yes, you can add photos with the button below. {PHOTO_NOTE}", "")
+    return text.strip()
 
 
 def _hold_prompt(db: Session, req: ReportingRequest, wmeta: dict) -> None:
     """Answer a stray question with the scope note, then ask the same pending question again, buttons included."""
     prompt = wmeta.get("prompt") or _last_agent_text(db, req)
-    keep = {k: wmeta[k] for k in ("awaiting", "actions", "claim_id", "description", "asked_delivery") if k in wmeta}
-    say(db, req, f"{SCOPE_REPLY} {prompt}", step="off_topic", prompt=prompt, **keep)
+    say(db, req, f"{SCOPE_REPLY} {prompt}", step="off_topic", prompt=prompt, **_held_meta(wmeta))
+
+
+PHOTO_NOTE = "Photos show that something happened, not that it reached everyone, so they don't replace a receipt. Please avoid faces, especially children's."
+
+
+def _held_meta(wmeta: dict) -> dict:
+    return {k: wmeta[k] for k in ("awaiting", "actions", "claim_id", "description", "asked_delivery") if k in wmeta}
+
+
+def _share_files_reply(db: Session, req: ReportingRequest, wmeta: dict) -> None:
+    """The NGO asked about photos: say yes, offer the button, and keep whatever question is still pending."""
+    prompt = wmeta.get("prompt") or (_last_agent_text(db, req) if wmeta.get("awaiting") else "")
+    keep = _held_meta(wmeta)
+    keep["actions"] = [*keep.get("actions", []), {"kind": "upload_photo", "label": "Add photos"}]
+    say(db, req, f"Yes, you can add photos with the button below. {PHOTO_NOTE}" + (f" {prompt}" if prompt else ""), step="share_files", prompt=prompt, **keep)
+
+
+def photo_received(db: Session, req: ReportingRequest, filename: str, duplicate: bool) -> None:
+    """Acknowledge a photo without ever treating it as proof, and keep the pending question and its buttons."""
+    # The upload itself is the latest message, so look at the assistant's last one for what is pending.
+    last_agent = db.scalar(
+        select(AgentMessage)
+        .where(AgentMessage.thread_id == thread_for(db, req).id, AgentMessage.sender_role == MessageSender.AGENT)
+        .order_by(AgentMessage.created_at.desc(), AgentMessage.id.desc())
+    )
+    wmeta = (last_agent.meta_json or {}) if last_agent else {}
+    awaiting = wmeta.get("awaiting")
+    prompt = wmeta.get("prompt") or (_strip_notes(last_agent.content) if last_agent and awaiting else "")
+    head = "That photo is identical to one already added, so I didn't add it again." if duplicate else "Thanks, photo added. It's kept with your update."
+    say(db, req, f"{head}" + (f" {prompt}" if prompt else ""), step="photo_received", prompt=prompt, **_held_meta(wmeta))
 
 
 def _decline_off_topic(db: Session, req: ReportingRequest, restore: list, awaiting: str | None = None, wmeta: dict | None = None) -> None:
@@ -365,7 +405,11 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
     if awaiting == "ask_amount":
         description = wmeta.get("description", "that")
         if not BARE_AMOUNT.fullmatch(text.strip()):  # "30", "$30", "30$": an answer. Anything longer might be a question.
-            if reply_intent(campaign.title, f"How much did {description} cost?", text) == ReplyIntent.QUESTION:
+            intent = reply_intent(campaign.title, f"How much did {description} cost?", text)
+            if intent == ReplyIntent.SHARE_FILES:
+                _share_files_reply(db, req, wmeta)
+                return
+            if intent == ReplyIntent.QUESTION:
                 _hold_prompt(db, req, wmeta)
                 return
         amount = parse_amount(text)
@@ -413,6 +457,9 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
         intent = reply_intent(campaign.title, open_inv.question, text)
         if intent == ReplyIntent.NEW_REPORT:
             treat_as_new = True  # fall through: it becomes proposed claims for the NGO to confirm
+        elif intent == ReplyIntent.SHARE_FILES:
+            _share_files_reply(db, req, wmeta)
+            return
         elif intent == ReplyIntent.QUESTION:
             say(
                 db,
@@ -454,6 +501,14 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
     except AIUnavailable:
         _save_report(db, req, campaign, text)
         say(db, req, "Thanks! I couldn't read that automatically. Please add each expense and activity with \"Add manually\".", mode="manual")
+        return
+    if extracted.wants_to_share_files and not (extracted.expenses or extracted.impacts):
+        for c in withdrawn_now:  # a proposal waiting for a yes must survive
+            c.status = ClaimStatus.PROPOSED
+        db.flush()
+        _share_files_reply(db, req, wmeta if not withdrawn_now else {})
+        if withdrawn_now:
+            propose_summary(db, req)
         return
     if not extracted.is_report:
         _decline_off_topic(db, req, restore=withdrawn_now, awaiting=awaiting, wmeta=wmeta)
