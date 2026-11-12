@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.agent import retrieval, runtime, workflow
 from app.agent.checks import linked_evidence
+from app.reporting import jobs
 from app.audit import audit
 from app.auth.deps import current_user, load_campaign_for_editor, require_role
-from app.db.base import get_db
+from app.db.base import get_db, utcnow
 from app.db.models import (
     ActivityReport,
     AgentMessage,
@@ -17,6 +18,7 @@ from app.db.models import (
     Evidence,
     EvidenceCheck,
     ExpenseClaim,
+    DonorUpdate,
     ImpactClaim,
     Investigation,
     ReportingRequest,
@@ -30,6 +32,7 @@ from contracts.reporting_schemas import (
     EvidenceCheckOut,
     EvidenceReviewStatus,
     InvestigationStatus,
+    PublicationStatus,
     ReportingRequestOut,
     ReportingRequestStatus,
     Role,
@@ -197,6 +200,27 @@ def list_requests(campaign_id: str, user: User = Depends(current_user), db: Sess
     return [request_out(r) for r in rows]
 
 
+def _request_to_open(db: Session, campaign: Campaign, cycle_key: str | None, user_id: str) -> ReportingRequest:
+    """The update to work on now. An update that is still open (or overdue, so it can still be answered) is
+    reopened as it is. Otherwise a new one starts: this period's if it has not been used, else an extra one,
+    so an NGO can report again after publishing without waiting for the schedule."""
+    if cycle_key is None:
+        open_one = db.scalar(
+            select(ReportingRequest)
+            .where(
+                ReportingRequest.campaign_id == campaign.id,
+                ReportingRequest.status.in_([*jobs.BLOCKING_STATUSES, ReportingRequestStatus.OVERDUE]),
+            )
+            .order_by(ReportingRequest.created_at.desc())
+        )
+        if open_one is not None:
+            return open_one
+    req, created = workflow.open_reporting_request(db, campaign, cycle_key=cycle_key, actor_id=user_id)
+    if not created and cycle_key is None:  # this period's update is already finished: start an extra one
+        req, _ = workflow.open_reporting_request(db, campaign, cycle_key=f"extra-{utcnow():%Y%m%d%H%M%S}", actor_id=user_id)
+    return req
+
+
 @router.post("/campaigns/{campaign_id}/reporting-requests/trigger", response_model=ThreadOut)
 def trigger(campaign_id: str, body: TriggerIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Demo/admin: open this cycle's follow-up now instead of waiting for the scheduler."""
@@ -205,7 +229,7 @@ def trigger(campaign_id: str, body: TriggerIn, user: User = Depends(current_user
         raise HTTPException(409, "Publish the campaign first")
     if not workflow.campaign_has_donations(db, c.id):
         raise HTTPException(409, "No donations yet, so there is nothing to report. Updates start after the first donation.")
-    req, _ = workflow.open_reporting_request(db, c, cycle_key=body.cycle_key, actor_id=user.id)
+    req = _request_to_open(db, c, body.cycle_key, user.id)
     runtime.start_cycle(db, req)
     db.commit()
     return build_thread(db, req, c)
@@ -296,8 +320,12 @@ def confirm_claim(claim_type: str, claim_id: str, body: ConfirmIn, user: User = 
 @router.post("/claims/{claim_type}/{claim_id}/withdraw", response_model=ThreadOut)
 def withdraw_claim(claim_type: str, claim_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
     claim, req = load_claim(db, user, claim_type, claim_id)
-    claim.status = ClaimStatus.WITHDRAWN
-    audit(db, actor_type="user", actor_id=user.id, action="claim.withdraw", entity_type=f"{claim_type}_claim", entity_id=claim.id)
+    if claim.status == ClaimStatus.WITHDRAWN:
+        return build_thread(db, req, db.get(Campaign, claim.campaign_id))
+    shown = db.scalars(select(DonorUpdate).where(DonorUpdate.campaign_id == claim.campaign_id, DonorUpdate.status == PublicationStatus.PUBLISHED))
+    if any(p.get("claim_id") == claim.id for u in shown for p in u.provenance_json):
+        raise HTTPException(409, "Donors have already seen this in a published update, so it can't be removed")
+    workflow.claim_removed(db, req, claim, user.id)
     db.commit()
     return build_thread(db, req, db.get(Campaign, claim.campaign_id))
 

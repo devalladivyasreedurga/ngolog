@@ -90,6 +90,7 @@ export default function Reporting() {
   const [funded, setFunded] = useState<boolean | null>(null);
   const [title, setTitle] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [nextAt, setNextAt] = useState<string | null>(null);
 
   const run = useCallback(async (fn: () => Promise<Thread | void>) => {
     setBusy(true);
@@ -109,6 +110,7 @@ export default function Reporting() {
       .then((c) => {
         setFunded(c.donations_received_cents > 0);
         setTitle(c.title);
+        setNextAt(c.next_followup_at);
       })
       .catch(() => setFunded(true));
     api<ReportingRequest[]>(`/api/campaigns/${id}/reporting-requests`)
@@ -119,17 +121,16 @@ export default function Reporting() {
       .catch((e) => setError(e.message));
   }, [id, run]);
 
-  // One update per reporting period: pressing the button again reopens the current one, so say so.
+  // An update that is still open is reopened; otherwise this starts an extra one outside the schedule.
+  const updateOpen = requests.some((r) => ["open", "in_review", "awaiting_approval", "escalated", "overdue"].includes(r.status));
   const trigger = () => {
     setNotice(null);
     return run(async () => {
       const t = await api<Thread>(`/api/campaigns/${id}/reporting-requests/trigger`, { method: "POST", json: {} });
+      const rs = await api<ReportingRequest[]>(`/api/campaigns/${id}/reporting-requests`);
+      setRequests(rs);
       if (thread && t.request.id === thread.request.id) {
-        setNotice(
-          t.request.status === "completed"
-            ? "This period's update is already published. The next one opens on your reporting schedule."
-            : "You already have an update open for this period. Carry on in the chat.",
-        );
+        setNotice("You already have an update open. Carry on in the chat.");
         setTimeout(() => setNotice(null), 8000);
       }
       return t;
@@ -150,7 +151,10 @@ export default function Reporting() {
         )}
         <span className="ml-auto" />
         <Link href={`/ngo/campaigns/${id}/updates`} className="text-sm text-stone-600 hover:text-emerald-800 hover:underline">Donor updates →</Link>
-        <Button variant="accent" onClick={trigger} disabled={busy || funded === false} title={funded === false ? "Updates start after the first donation" : undefined}>Start an update</Button>
+        <div className="relative">
+          <Button variant="accent" className="!px-4 !py-[9px]" onClick={trigger} disabled={busy || funded === false} title={funded === false ? "Updates start after the first donation" : undefined}>{updateOpen ? "Continue update" : "Start an update"}</Button>
+          {nextAt && funded !== false && <span className="absolute right-0 top-full mt-1 whitespace-nowrap text-xs text-stone-500">Next scheduled: {new Date(nextAt + (nextAt.endsWith("Z") ? "" : "Z")).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>}
+        </div>
       </div>
       <p className="mt-0.5 text-sm text-stone-500">
         {thread && funded !== false ? `Spending update · started ${new Date(thread.request.created_at + "Z").toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Spending updates"}
@@ -439,7 +443,11 @@ function Claims({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run
       <p className="mt-0.5 text-xs text-stone-500">Use the buttons in the chat to confirm or add receipts.</p>
       {live.length === 0 && <p className="mt-2 text-sm text-stone-500">Nothing yet.</p>}
       <ul className="mt-2">
-        {groupClaims(live).map((g) => <ClaimCard key={g[0].id} claims={g} />)}
+        {groupClaims(live).map((g) => <ClaimCard key={g[0].id} claims={g} busy={busy} onRemove={() => run(async () => {
+          let t: Thread | undefined;
+          for (const c of g) t = await api<Thread>(`/api/claims/${c.claim_type}/${c.id}/withdraw`, { method: "POST" });
+          return t;
+        })} />)}
       </ul>
       <details className="mt-4 border-t border-stone-100 pt-3">
       <summary className="cursor-pointer text-sm text-emerald-800">Add manually</summary>
@@ -484,7 +492,8 @@ function groupClaims(claims: Claim[]): Claim[][] {
   return [...groups.values()].map((g) => [...g].sort((a, b) => Number(b.claim_type === "expense") - Number(a.claim_type === "expense")));
 }
 
-function ClaimCard({ claims }: { claims: Claim[] }) {
+function ClaimCard({ claims, busy, onRemove }: { claims: Claim[]; busy: boolean; onRemove: () => void }) {
+  const [confirming, setConfirming] = useState(false);
   const expenses = claims.filter((c) => c.claim_type === "expense");
   const impacts = claims.filter((c) => c.claim_type !== "expense");
   const title = (expenses[0] ?? impacts[0]).description;
@@ -509,6 +518,18 @@ function ClaimCard({ claims }: { claims: Claim[] }) {
         </p>
       ))}
       {waiting && <p className="mt-2 text-xs text-amber-800">Waiting for your OK in the chat</p>}
+      <div className="mt-2 text-xs">
+        {confirming ? (
+          <span className="text-stone-600">
+            Remove this from your report?{" "}
+            <button type="button" disabled={busy} className="font-medium text-coral-600 hover:underline" onClick={() => { setConfirming(false); onRemove(); }}>Yes, remove</button>
+            {" · "}
+            <button type="button" className="hover:underline" onClick={() => setConfirming(false)}>Cancel</button>
+          </span>
+        ) : (
+          <button type="button" className="text-stone-500 hover:text-coral-600 hover:underline" onClick={() => setConfirming(true)}>Remove</button>
+        )}
+      </div>
     </li>
   );
 }

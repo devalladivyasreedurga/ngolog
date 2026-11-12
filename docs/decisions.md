@@ -35,3 +35,9 @@ keyword patterns remain only as a fallback when there is no API key or the call 
 ## Donor update: summary first, photos shared by default
 
 The update card shows three tiles (reported spending, matched by receipts, activities reported), one sentence and any shared photos. Per-item rows and receipt links sit behind "See the details". Photos added through the chat are shared with donors by default, because the NGO adds them to show donors; the NGO sees them in the preview and can untick them under Documents, and the "Add photos" note says so. Receipts stay private unless the NGO shares them. Photos are shown as "not receipts" and never change a claim's status.
+
+## Extra updates by hand, and removing a reported claim
+
+"Start an update" always works once a campaign has a donation. If an update is still open it reopens that one (never stacks two); otherwise it opens an extra update (`extra-<timestamp>` cycle key) outside the schedule, and the next scheduled date is shown beside the button. The scheduler is unchanged.
+
+An NGO can remove a reported claim. It is withdrawn, not deleted, with an audit row. Unpublished donor drafts are withdrawn and re-drafted from what is left. Once donors have seen a claim in a published update it can no longer be removed (409), so published history never changes underneath them.

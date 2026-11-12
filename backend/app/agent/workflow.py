@@ -271,6 +271,31 @@ def reject_proposed(db: Session, req: ReportingRequest, user_id: str) -> None:
     say(db, req, "No problem. What should it say instead?", step="open", awaiting="ask_spend")
 
 
+def claim_removed(db: Session, req: ReportingRequest, claim: ExpenseClaim | ImpactClaim, user_id: str) -> None:
+    """The NGO removed a reported item. It stays on record as withdrawn; any unpublished draft that used it is
+    withdrawn too, and the chat moves on to the next thing that is needed."""
+    claim.status = ClaimStatus.WITHDRAWN
+    audit(db, actor_type="user", actor_id=user_id, action="claim.withdraw", entity_type=f"{'expense' if isinstance(claim, ExpenseClaim) else 'impact'}_claim", entity_id=claim.id)
+    for old in db.scalars(select(DonorUpdate).where(DonorUpdate.reporting_request_id == req.id, DonorUpdate.status.in_([PublicationStatus.DRAFT, PublicationStatus.APPROVED]))):
+        old.status = PublicationStatus.WITHDRAWN
+    if req.status == ReportingRequestStatus.AWAITING_APPROVAL:
+        req.status = ReportingRequestStatus.OPEN
+    db.flush()
+    lead = f"Removed {claim.description} from your report."
+    expenses, impacts = claims_for_request(db, req)
+    if not any(c.status != ClaimStatus.WITHDRAWN for c in expenses + impacts):
+        say(db, req, f"{lead} What did you spend the money on?", step="open", awaiting="ask_spend")
+        return
+    nxt = _what_next(db, req)
+    if nxt:
+        say(db, req, f"{lead}\n\n{nxt[0]}", **nxt[1])
+    elif is_ready_for_draft(db, req):
+        draft_donor_update(db, db.get(Campaign, req.campaign_id), req)
+        say(db, req, f"{lead} I've drafted a new donor update from what is left. Nothing is shared until you approve it.", step="queue_for_review", actions=[{"kind": "link", "label": "Review the draft", "href": "updates"}])
+    else:
+        say(db, req, lead, step="claim_removed")
+
+
 # ---------------------------------------------------------------- interpret / extract
 
 
