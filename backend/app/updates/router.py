@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.agent import retrieval, runtime, workflow
 from app.audit import audit
 from app.auth.deps import current_user, load_campaign_for_editor, optional_user, require_role
-from app.campaigns.router import CampaignOut, campaign_out
+from app.campaigns.router import CampaignOut, campaign_out, latest_plan
 from app.db.base import get_db, utcnow
 from app.db.models import (
     Campaign,
@@ -50,6 +50,7 @@ class TimelineOut(BaseModel):
     entries: list[TimelineEntry]
     totals_note: str
     reporting_overdue: bool
+    limitations: list[str] = []
 
 
 class NotificationOut(BaseModel):
@@ -149,6 +150,7 @@ def timeline(campaign_id: str, user: User | None = Depends(optional_user), db: S
     rows = db.scalars(
         select(DonorUpdate).where(DonorUpdate.campaign_id == c.id, DonorUpdate.status == PublicationStatus.PUBLISHED).order_by(DonorUpdate.published_at.desc())
     )
+    plan = latest_plan(db, c.id)
     return TimelineOut(
         campaign=campaign_out(db, c),
         entries=[TimelineEntry(update=update_out(u), provenance=_public_provenance(u.provenance_json)) for u in rows],
@@ -158,6 +160,7 @@ def timeline(campaign_id: str, user: User | None = Depends(optional_user), db: S
             "Neither is an audited account balance."
         ),
         reporting_overdue=db.scalar(select(ReportingRequest.id).where(ReportingRequest.campaign_id == c.id, ReportingRequest.status == ReportingRequestStatus.OVERDUE).limit(1)) is not None,
+        limitations=list(plan.limitations_json) if plan else [],
     )
 
 

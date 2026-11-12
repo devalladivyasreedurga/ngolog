@@ -112,10 +112,11 @@ def open_reporting_request(db: Session, campaign: Campaign, *, cycle_key: str | 
     say(
         db,
         req,
-        f"Hi! Quick update on \"{campaign.title}\" for your donors. "
-        "What did you spend campaign money on since the last update?",
+        f"Time for a quick update on \"{campaign.title}\". "
+        "What did you spend the money on? For example: 25 school kits, $500.",
         step="open",
         awaiting="ask_spend",
+        actions=[{"kind": "nothing_spent", "label": "Nothing spent yet"}],
     )
     campaign.next_followup_at = utcnow() + timedelta(days=campaign.reporting_frequency_days)
     audit(db, actor_type="agent" if actor_id is None else "user", actor_id=actor_id, action="reporting_request.open", entity_type="reporting_request", entity_id=req.id)
@@ -266,6 +267,11 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
         return
     if awaiting == "ask_delivery" and _is(text, SKIP_WORDS):
         return  # nothing to say: the draft follows
+    if awaiting == "ask_spend" and text.strip().lower() == "nothing spent yet":
+        prompt = delivery_prompt(db, req)
+        if prompt is not None:
+            say(db, req, "No problem. Has anything been handed out yet?", step="ask_delivery", **prompt[1])
+        return
     if awaiting == "confirm_claims":
         if _is(text, YES_WORDS):
             confirm_proposed(db, req, user_id)

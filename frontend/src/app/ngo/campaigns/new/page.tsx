@@ -10,7 +10,9 @@ export default function NewCampaign() {
   const router = useRouter();
   const [form, setForm] = useState({ title: "", description: "", category: "school_supplies", target_amount: "1000", expected_activities: "", reporting_frequency_days: "7" });
   const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [plan, setPlan] = useState<{ questions: string; evidence: string; limitations: string; source: string } | null>(null);
+  const [plan, setPlan] = useState<{ questions: string[]; evidence: string[]; limitations: string; source: string } | null>(null);
+  const [newChip, setNewChip] = useState("");
+  const [showLimits, setShowLimits] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +26,7 @@ export default function NewCampaign() {
       const c = await api<Campaign>("/api/campaigns", { method: "POST", json: { ...form, target_amount: Number(form.target_amount), reporting_frequency_days: Number(form.reporting_frequency_days) } });
       setCampaign(c);
       const p = await api<Plan>(`/api/campaigns/${c.id}/reporting-plan/draft`, { method: "POST" });
-      setPlan({ questions: p.questions.join("\n"), evidence: p.evidence_suggestions.join("\n"), limitations: p.limitations.join("\n"), source: p.source });
+      setPlan({ questions: p.questions, evidence: p.evidence_suggestions, limitations: p.limitations.join("\n"), source: p.source });
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -38,7 +40,7 @@ export default function NewCampaign() {
     setError(null);
     const lines = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
     try {
-      await api(`/api/campaigns/${campaign.id}/reporting-plan`, { method: "PUT", json: { questions: lines(plan.questions), evidence_suggestions: lines(plan.evidence), limitations: lines(plan.limitations) } });
+      await api(`/api/campaigns/${campaign.id}/reporting-plan`, { method: "PUT", json: { questions: plan.questions, evidence_suggestions: plan.evidence, limitations: lines(plan.limitations) } });
       await api(`/api/campaigns/${campaign.id}/publish`, { method: "POST" });
       router.push(`/campaigns/${campaign.id}`);
     } catch (err) {
@@ -74,30 +76,48 @@ export default function NewCampaign() {
         </Card>
       ) : (
         plan && (
-          <Card className="mt-4 space-y-4">
+          <Card className="mt-4 space-y-5">
             <div>
-              <h2 className="font-semibold">Reporting plan</h2>
-              <p className="text-sm text-stone-600">
-                {plan.source === "ai" ? "Drafted by AI" : "Starter template"}. Edit freely, one item per line. This is what the assistant will ask about; it is not a payout schedule.
+              <h2 className="font-semibold">How you&apos;ll report</h2>
+              <p className="mt-1 text-sm text-stone-600">
+                The assistant will check in {form.reporting_frequency_days === "7" ? "every week" : form.reporting_frequency_days === "14" ? "every two weeks" : "every month"} and ask what you spent and handed out. It never moves money.
               </p>
             </div>
-            <PlanField label="Questions the assistant will ask" value={plan.questions} onChange={(v) => setPlan({ ...plan, questions: v })} />
-            <PlanField label="Useful supporting evidence" value={plan.evidence} onChange={(v) => setPlan({ ...plan, evidence: v })} />
-            <PlanField label="Limitations donors should know" value={plan.limitations} onChange={(v) => setPlan({ ...plan, limitations: v })} />
-            <Button onClick={acceptAndPublish} disabled={busy}>Accept plan and publish campaign</Button>
+            <div>
+              <p className="text-sm font-medium">Evidence you can share</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {plan.evidence.map((e, i) => (
+                  <span key={`${e}-${i}`} className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1 text-sm text-emerald-900">
+                    {e}
+                    <button type="button" aria-label={`Remove ${e}`} className="text-emerald-700 hover:text-emerald-950" onClick={() => setPlan({ ...plan, evidence: plan.evidence.filter((_, j) => j !== i) })}>×</button>
+                  </span>
+                ))}
+                <form
+                  onSubmit={(ev) => {
+                    ev.preventDefault();
+                    const v = newChip.trim();
+                    if (v) setPlan({ ...plan, evidence: [...plan.evidence, v] });
+                    setNewChip("");
+                  }}
+                >
+                  <input className="w-40 rounded-full border border-dashed border-stone-300 px-3 py-1 text-sm" placeholder="+ Add another" value={newChip} onChange={(ev) => setNewChip(ev.target.value)} />
+                </form>
+              </div>
+            </div>
+            <p className="text-xs text-stone-500">
+              Donors will see a short note on the campaign page about what these documents can and can&apos;t show.{" "}
+              <button type="button" className="underline" onClick={() => setShowLimits(!showLimits)}>
+                {showLimits ? "Hide limitations" : "Limitations"}
+              </button>
+            </p>
+            {showLimits && (
+              <textarea className={`${inputClass} text-sm`} rows={3} aria-label="Limitations shown to donors" value={plan.limitations} onChange={(ev) => setPlan({ ...plan, limitations: ev.target.value })} />
+            )}
+            <Button onClick={acceptAndPublish} disabled={busy}>Publish campaign</Button>
             <ErrorText error={error} />
           </Card>
         )
       )}
     </Page>
-  );
-}
-
-function PlanField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-  return (
-    <label className="block text-sm font-medium">
-      {label}
-      <textarea className={`${inputClass} mt-1 font-normal`} rows={4} value={value} onChange={(e) => onChange(e.target.value)} />
-    </label>
   );
 }

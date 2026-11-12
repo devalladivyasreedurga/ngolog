@@ -188,3 +188,28 @@ def test_activity_phrase_does_not_repeat_the_unit():
     assert _phrase(impact("Delivered to homeless people", 2.0, "people")) == "Delivered to homeless people (2 people)"
     assert _phrase(impact("meals served", None, None)) == "meals served"
     assert _phrase(impact("meals served", 40.0, None)) == "meals served (40)"
+
+
+def test_an_upload_shows_up_in_the_chat_as_the_ngos_message(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    claim = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()["claims"][0]
+    thread = upload(client, ngo, req_id, png("TOTAL=420 NO=C3"), claim["id"], name="receipt.png")
+    sent = [m for m in thread["messages"] if m["sender_role"] == "ngo" and m["meta"].get("evidence_id")]
+    assert len(sent) == 1 and sent[0]["meta"]["filename"] == "receipt.png" and sent[0]["meta"]["file_type"] == "image/png"
+    assert thread["messages"][-1]["sender_role"] == "agent"  # the assistant still answers last, so its buttons show
+
+
+def test_nothing_spent_yet_moves_to_the_delivery_question(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    first = agent_msgs(client.get(f"/api/reporting-requests/{req_id}/thread", headers=ngo).json())[0]
+    assert action_kinds(first) == ["nothing_spent"] and "For example" in first["content"]
+    thread = say(client, ngo, req_id, "Nothing spent yet")
+    assert thread["claims"] == []
+    last = agent_msgs(thread)[-1]
+    assert "handed out" in last["content"] and last["meta"]["awaiting"] == "ask_delivery"
+
+
+def test_public_timeline_carries_the_plan_limitations(client, published_campaign):
+    tl = client.get(f"/api/campaigns/{published_campaign}/timeline").json()
+    assert tl["limitations"] and all(isinstance(x, str) for x in tl["limitations"])

@@ -32,6 +32,7 @@ from contracts.reporting_schemas import (
     EvidenceKind,
     EvidenceReviewStatus,
     EvidenceVisibility,
+    MessageSender,
 )
 
 router = APIRouter(prefix="/api/evidence", tags=["evidence"])
@@ -132,6 +133,10 @@ async def upload(
         db.add(ClaimEvidence(claim_type=claim_type, claim_id=claim.id, evidence_id=ev.id))
         if claim.evidence_status == EvidenceReviewStatus.REPORTED:
             claim.evidence_status = EvidenceReviewStatus.SUBMITTED
+
+    # The NGO's own side of the conversation: show what was sent, as a chat message.
+    workflow.say(db, req, "Sent a document", MessageSender.NGO, step="evidence_upload", evidence_id=ev.id, filename=ev.original_filename, file_type=mime)
+    db.flush()
 
     ngo_campaign_ids = list(db.scalars(select(Campaign.id).where(Campaign.ngo_id == campaign.ngo_id)))
     dups = find_exact_duplicates(db, ev, ngo_campaign_ids)

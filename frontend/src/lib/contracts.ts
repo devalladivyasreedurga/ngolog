@@ -174,6 +174,7 @@ export interface Timeline {
   entries: TimelineEntry[];
   totals_note: string;
   reporting_overdue: boolean;
+  limitations: string[];
 }
 
 export interface NotificationItem {

@@ -5,19 +5,23 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, Card, ErrorText, inputClass, Page } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { money, type Campaign } from "@/lib/contracts";
+import { money, type Campaign, type ReportingRequest } from "@/lib/contracts";
 
 export default function NgoDashboard() {
   const { user, ready } = useAuth();
   const [hasNgo, setHasNgo] = useState<boolean | null>(null);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [waiting, setWaiting] = useState<Record<string, boolean>>({});
 
   const load = useCallback(async () => {
     try {
       await api("/api/ngos/me");
       setHasNgo(true);
-      setCampaigns(await api<Campaign[]>("/api/campaigns?mine=true"));
+      const list = await api<Campaign[]>("/api/campaigns?mine=true");
+      setCampaigns(list);
+      const latest = await Promise.all(list.map((c) => api<ReportingRequest[]>(`/api/campaigns/${c.id}/reporting-requests`).then((rs) => [c.id, rs[0]] as const).catch(() => [c.id, undefined] as const)));
+      setWaiting(Object.fromEntries(latest.map(([id, r]) => [id, r?.status === "open" || r?.status === "overdue"])));
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setHasNgo(false);
       else setError((e as Error).message);
@@ -50,14 +54,17 @@ export default function NgoDashboard() {
         {campaigns.map((c) => (
           <Card key={c.id} className="flex flex-wrap items-center gap-4">
             <div className="flex-1">
-              <p className="font-semibold">{c.title}</p>
+              <p className="font-semibold">
+                {c.title}
+                {waiting[c.id] && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 align-middle text-xs font-medium text-amber-900">Waiting for your reply</span>}
+              </p>
               <p className="text-sm text-stone-600">
                 {c.status} · {money(c.donations_received_cents, c.currency)} received · {money(c.reported_expenses_cents, c.currency)} reported spent
                 {c.next_followup_at && ` · next update due ${new Date(c.next_followup_at + "Z").toLocaleDateString()}`}
               </p>
             </div>
             <Link href={`/campaigns/${c.id}`} className="text-sm text-emerald-800 hover:underline">Public page</Link>
-            <Link href={`/ngo/campaigns/${c.id}/reporting`} className="text-sm text-emerald-800 hover:underline">Reporting</Link>
+            <Link href={`/ngo/campaigns/${c.id}/reporting`} className="text-sm text-emerald-800 hover:underline">{waiting[c.id] ? "Reply now" : "Reporting"}</Link>
             <Link href={`/ngo/campaigns/${c.id}/updates`} className="text-sm text-emerald-800 hover:underline">Donor updates</Link>
           </Card>
         ))}

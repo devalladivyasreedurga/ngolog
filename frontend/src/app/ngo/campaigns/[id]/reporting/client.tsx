@@ -68,7 +68,7 @@ export default function Reporting() {
         <span className="text-stone-500">{thread?.campaign_title}</span>
         <span className="ml-auto" />
         <Link href={`/ngo/campaigns/${id}/updates`} className="text-sm text-emerald-800 hover:underline">Donor updates →</Link>
-        <Button variant="secondary" onClick={trigger} disabled={busy}>Run follow-up now (demo)</Button>
+        <Button variant="secondary" onClick={trigger} disabled={busy}>Start an update now</Button>
       </div>
       <ErrorText error={error} />
       {requests.length > 1 && (
@@ -99,11 +99,18 @@ type Run = (fn: () => Promise<Thread | void>) => Promise<void>;
 
 function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run }) {
   const [text, setText] = useState("");
+  const [sent, setSent] = useState<{ text: string; at: number } | null>(null);
+  // Shown only until the server's answer arrives (the message count then moves on).
+  const pending = busy && sent && sent.at === thread.messages.length ? sent.text : null;
+  const setPending = (text: string) => setSent({ text, at: thread.messages.length });
   const closed = thread.request.status === "completed";
   const listRef = useRef<HTMLOListElement>(null);
+  const [seen] = useState(thread.messages.length); // messages already on screen do not animate
+  const lastMsg = thread.messages[thread.messages.length - 1];
+  const lastAwaiting = lastMsg?.sender_role === "agent" ? lastMsg.meta.awaiting : undefined;
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
-  }, [thread.messages.length]);
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+  }, [thread.messages.length, pending]);
   return (
     <Card className="lg:col-span-3">
       <div className="flex items-center justify-between">
@@ -111,14 +118,34 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
         <span className="text-xs text-stone-500">{ROUND_STATUS[thread.request.status] ?? thread.request.status}</span>
       </div>
       <ol ref={listRef} className="mt-4 max-h-[28rem] space-y-3 overflow-y-auto">
-        {thread.messages.map((m) => (
-          <li key={m.id} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-line ${m.sender_role === "ngo" ? "ml-8 bg-emerald-50" : "mr-8 bg-stone-100"}`}>
+        {thread.messages.map((m, i) => (
+          <li key={m.id} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-line ${i >= seen ? "msg-in" : ""} ${m.sender_role === "ngo" ? "ml-8 bg-emerald-50" : "mr-8 bg-stone-100"}`}>
             <p className="mb-1 text-xs font-medium text-stone-500">{m.sender_role === "ngo" ? "You" : "Assistant"}</p>
-            {m.content}
+            {m.meta.evidence_id && m.sender_role === "ngo" ? (
+              <Attachment
+                evidenceId={String(m.meta.evidence_id)}
+                filename={String(m.meta.filename ?? "document")}
+                fileType={String(m.meta.file_type ?? "")}
+                onLoaded={() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight })}
+              />
+            ) : (
+              m.content
+            )}
           </li>
         ))}
+        {pending !== null && (
+          <li className="msg-in ml-8 rounded-lg bg-emerald-50 px-3 py-2 text-sm whitespace-pre-line">
+            <p className="mb-1 text-xs font-medium text-stone-500">You</p>
+            {pending}
+          </li>
+        )}
+        {pending !== null && (
+          <li className="msg-in mr-8 w-16 rounded-lg bg-stone-100 px-3 py-3" aria-label="The assistant is typing">
+            <span className="typing-dots"><i /><i /><i /></span>
+          </li>
+        )}
       </ol>
-      {!closed && <QuickReplies thread={thread} busy={busy} run={run} />}
+      {!closed && !busy && <QuickReplies thread={thread} busy={busy} run={run} onPending={setPending} />}
       {!closed && (
         <form
           className="mt-3 flex gap-2"
@@ -126,6 +153,7 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
             e.preventDefault();
             const content = text;
             setText("");
+            setPending(content);
             run(() => api<Thread>(`/api/reporting-requests/${thread.request.id}/messages`, { method: "POST", json: { content } }));
           }}
         >
@@ -133,7 +161,7 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
           <Button type="submit" disabled={busy || !text.trim()}>Send</Button>
         </form>
       )}
-      {!closed && (
+      {!closed && lastAwaiting !== "confirm_claims" && (
         <div className="mt-2 flex flex-wrap gap-2 text-xs">
           {[
             ["+ Add another expense", "We also bought "],
@@ -155,7 +183,43 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
   );
 }
 
-function QuickReplies({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run }) {
+// The file endpoint needs the login token, so the image is fetched with it and shown from a local blob.
+function Attachment({ evidenceId, filename, fileType, onLoaded }: { evidenceId: string; filename: string; fileType: string; onLoaded: () => void }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [missing, setMissing] = useState(false);
+  const isImage = fileType.startsWith("image/");
+  useEffect(() => {
+    if (!isImage) return;
+    let url: string | null = null;
+    let alive = true;
+    fetch(`${API_URL}/api/evidence/${evidenceId}/file`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error("gone"))))
+      .then((b) => {
+        url = URL.createObjectURL(b);
+        if (alive) setSrc(url);
+      })
+      .catch(() => alive && setMissing(true));
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [evidenceId, isImage]);
+  return (
+    <div>
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={filename} onLoad={onLoaded} className="max-h-56 rounded-md border border-stone-200 bg-white" />
+      ) : (
+        <div className="flex h-20 w-40 items-center justify-center rounded-md border border-dashed border-stone-300 text-xs text-stone-500">
+          {isImage && !missing ? "Loading…" : "Document"}
+        </div>
+      )}
+      <p className="mt-1 text-xs text-stone-500">{filename}{missing && " (file no longer stored)"}</p>
+    </div>
+  );
+}
+
+function QuickReplies({ thread, busy, run, onPending }: { thread: Thread; busy: boolean; run: Run; onPending: (t: string) => void }) {
   const last = thread.messages[thread.messages.length - 1];
   const actions = ((last?.sender_role === "agent" ? last.meta.actions : undefined) as Action[] | undefined) ?? [];
   if (actions.length === 0) return null;
@@ -172,6 +236,8 @@ function QuickReplies({ thread, busy, run }: { thread: Thread; busy: boolean; ru
         return api<Thread>(`/api/claims/${a.claim_type}/${a.claim_id}/no-evidence`, { method: "POST", json: { explanation: "I don't have one." } });
       case "set_amount":
         return api<Thread>(`/api/claims/expense/${a.claim_id}/confirm`, { method: "POST", json: { amount: a.amount } });
+      case "nothing_spent":
+        return api<Thread>(`/api/reporting-requests/${rid}/messages`, { method: "POST", json: { content: "Nothing spent yet" } });
       default:
         return api<Thread>(`/api/reporting-requests/${rid}/messages`, { method: "POST", json: { content: "Skip" } });
     }
@@ -191,7 +257,10 @@ function QuickReplies({ thread, busy, run }: { thread: Thread; busy: boolean; ru
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 e.target.value = "";
-                if (file) run(() => uploadEvidence(rid, a.claim_type!, a.claim_id!, file));
+                if (file) {
+                  onPending(`Sending ${file.name}…`);
+                  run(() => uploadEvidence(rid, a.claim_type!, a.claim_id!, file));
+                }
               }}
             />
           </label>
@@ -200,7 +269,10 @@ function QuickReplies({ thread, busy, run }: { thread: Thread; busy: boolean; ru
             {a.label}
           </Link>
         ) : (
-          <button key={a.label} className={chip} disabled={busy} onClick={() => run(() => go(a))}>
+          <button key={a.label} className={chip} disabled={busy} onClick={() => {
+              onPending(a.kind === "set_amount" ? a.label : a.label.replace(/^Yes, /, ""));
+              run(() => go(a));
+            }}>
             {a.label}
           </button>
         ),

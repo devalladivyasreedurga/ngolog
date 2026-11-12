@@ -81,7 +81,31 @@ export default function CampaignPage() {
           </li>
         ))}
       </ol>
+      <Limitations items={timeline.limitations} />
     </Page>
+  );
+}
+
+// Like the small print at the bottom of a site: always there, opened on request.
+function Limitations({ items }: { items: string[] }) {
+  const [open, setOpen] = useState(false);
+  if (items.length === 0) return null;
+  return (
+    <footer className="mt-12 border-t border-stone-200 pt-4 text-xs text-stone-500">
+      <p>
+        Updates are the organization&apos;s own reports, checked against the documents it shared.{" "}
+        <button type="button" className="underline" aria-expanded={open} onClick={() => setOpen(!open)}>
+          Limitations
+        </button>
+      </p>
+      {open && (
+        <ul className="mt-2 list-disc space-y-1 pl-5">
+          {items.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      )}
+    </footer>
   );
 }
 

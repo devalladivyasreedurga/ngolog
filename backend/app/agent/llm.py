@@ -72,10 +72,11 @@ class ClaudeProvider:
 
     def draft_reporting_plan(self, title, category, description, activities) -> ReportingPlanDraft:
         system = (
-            "You help small NGOs plan lightweight donor reporting. Propose at most 5 short "
-            "questions an accountability assistant should ask during each update, at most 5 "
-            "kinds of supporting evidence that would be reasonable for this kind of campaign, "
-            "and honest limitations (what such evidence cannot prove). Never ask for "
+            "You help small NGOs plan lightweight donor reporting. Keep everything short. "
+            "Propose at most 3 short questions (under 12 words each), 3 to 5 kinds of supporting "
+            "evidence as 1 to 3 word labels such as 'Receipts', 'Photos' or 'Distribution count', "
+            "and at most 3 plain-language limitations of one short sentence each (what such evidence "
+            "cannot prove). Never ask for "
             "beneficiary names, medical records or exact sensitive locations. " + UNTRUSTED_NOTE
         )
         text = (
