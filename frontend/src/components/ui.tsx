@@ -57,32 +57,32 @@ export function Nav() {
   const { user, signOut } = useAuth();
   return (
     <header className="bg-emerald-400 text-emerald-950">
-      <nav className="mx-auto flex max-w-5xl flex-wrap items-center gap-4 px-4 py-3 text-sm">
+      <nav className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-6 py-3 text-sm">
         <Link href="/" className="text-base font-semibold text-emerald-950">
           NGOLog<span className="text-coral-500">.</span>
         </Link>
-        <Link href="/" className="text-emerald-950/80 hover:text-emerald-950 hover:underline">
+        <Link href="/" className="text-emerald-950 hover:underline">
           Campaigns
         </Link>
         {user?.role === "ngo_admin" && (
-          <Link href="/ngo/dashboard" className="text-emerald-950/80 hover:text-emerald-950 hover:underline">
+          <Link href="/ngo/dashboard" className="text-emerald-950 hover:underline">
             NGO dashboard
           </Link>
         )}
         {(user?.role === "ngo_admin" || user?.role === "reviewer") && (
-          <Link href="/accountability" className="text-emerald-950/80 hover:text-emerald-950 hover:underline">
+          <Link href="/accountability" className="text-emerald-950 hover:underline">
             Accountability
           </Link>
         )}
         {user?.role === "donor" && (
-          <Link href="/donor/dashboard" className="text-emerald-950/80 hover:text-emerald-950 hover:underline">
+          <Link href="/donor/dashboard" className="text-emerald-950 hover:underline">
             My campaigns
           </Link>
         )}
         <span className="ml-auto" />
         {user ? (
           <>
-            <span className="text-emerald-950/70">{user.email}</span>
+            <span className="text-emerald-950/80">{user.email}</span>
             <Button variant="ghost" className="!text-emerald-950" onClick={signOut}>
               Sign out
             </Button>
@@ -98,5 +98,5 @@ export function Nav() {
 }
 
 export function Page({ children }: { children: React.ReactNode }) {
-  return <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>;
+  return <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-8">{children}</main>;
 }
