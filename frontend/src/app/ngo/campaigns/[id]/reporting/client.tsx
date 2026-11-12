@@ -89,6 +89,7 @@ export default function Reporting() {
   const [busy, setBusy] = useState(false);
   const [funded, setFunded] = useState<boolean | null>(null);
   const [title, setTitle] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const run = useCallback(async (fn: () => Promise<Thread | void>) => {
     setBusy(true);
@@ -118,7 +119,22 @@ export default function Reporting() {
       .catch((e) => setError(e.message));
   }, [id, run]);
 
-  const trigger = () => run(() => api<Thread>(`/api/campaigns/${id}/reporting-requests/trigger`, { method: "POST", json: {} }));
+  // One update per reporting period: pressing the button again reopens the current one, so say so.
+  const trigger = () => {
+    setNotice(null);
+    return run(async () => {
+      const t = await api<Thread>(`/api/campaigns/${id}/reporting-requests/trigger`, { method: "POST", json: {} });
+      if (thread && t.request.id === thread.request.id) {
+        setNotice(
+          t.request.status === "completed"
+            ? "This period's update is already published. The next one opens on your reporting schedule."
+            : "You already have an update open for this period. Carry on in the chat.",
+        );
+        setTimeout(() => setNotice(null), 8000);
+      }
+      return t;
+    });
+  };
 
   return (
     <Page>
@@ -134,12 +150,13 @@ export default function Reporting() {
         )}
         <span className="ml-auto" />
         <Link href={`/ngo/campaigns/${id}/updates`} className="text-sm text-stone-600 hover:text-emerald-800 hover:underline">Donor updates →</Link>
-        <Button variant="secondary" onClick={trigger} disabled={busy || funded === false} title={funded === false ? "Updates start after the first donation" : undefined}>Start an update</Button>
+        <Button variant="accent" onClick={trigger} disabled={busy || funded === false} title={funded === false ? "Updates start after the first donation" : undefined}>Start an update</Button>
       </div>
       <p className="mt-0.5 text-sm text-stone-500">
         {thread && funded !== false ? `Spending update · started ${new Date(thread.request.created_at + "Z").toLocaleDateString(undefined, { month: "short", day: "numeric" })}` : "Spending updates"}
       </p>
       <ErrorText error={error} />
+      {notice && <p role="status" className="mt-3 rounded-lg border border-stone-200 bg-surface px-3 py-2 text-sm text-stone-700">{notice}</p>}
       {requests.length > 1 && (
         <select className={`${inputClass} mt-3 max-w-xs`} onChange={(e) => run(() => api<Thread>(`/api/reporting-requests/${e.target.value}/thread`))}>
           {requests.map((r, i) => (
@@ -164,9 +181,7 @@ export default function Reporting() {
           </div>
           <div className="space-y-4 lg:col-span-2">
             <Claims thread={thread} busy={busy} run={run} />
-            <div id="documents" className="scroll-mt-4">
-              <EvidenceList thread={thread} busy={busy} run={run} />
-            </div>
+            <EvidenceList thread={thread} busy={busy} run={run} />
           </div>
         </div>
         </>
@@ -192,7 +207,7 @@ function Steps({ thread, campaignId }: { thread: Thread; campaignId: string }) {
           <li key={label} className="flex flex-1 items-center gap-2 last:flex-none" aria-current={now ? "step" : undefined}>
             <span
               className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[11px] ${
-                done ? "border-emerald-600 bg-emerald-50 text-emerald-800" : now ? "border-emerald-700 bg-emerald-700 text-white" : "border-stone-300 text-stone-400"
+                done ? "border-emerald-600 bg-emerald-50 text-emerald-800" : now ? "border-coral-500 bg-coral-500 text-white" : "border-stone-300 text-stone-400"
               }`}
             >
               {done ? "✓" : n}
@@ -211,7 +226,11 @@ function StepLink({ n, campaignId, className, children }: { n: number; campaignI
   if (n >= 3) return <Link href={`/ngo/campaigns/${campaignId}/updates`} className={className}>{children}</Link>;
   const target = n === 1 ? "chat" : "documents";
   return (
-    <button type="button" className={className} onClick={() => document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+    <button type="button" className={className} onClick={() => {
+        const el = document.getElementById(target);
+        if (el instanceof HTMLDetailsElement) el.open = true;
+        el?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }}>
       {children}
     </button>
   );
@@ -245,9 +264,9 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
   }, [thread.messages.length, pending]);
   return (
     <Card>
-      <ol ref={listRef} className="max-h-[28rem] space-y-3 overflow-y-auto">
+      <ol ref={listRef} className="max-h-[max(20rem,calc(100vh-19rem))] space-y-3 overflow-y-auto pr-4">
         {thread.messages.map((m, i) => (
-          <li key={m.id} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-line ${i >= seen ? "msg-in" : ""} ${m.sender_role === "ngo" ? "ml-8 bg-emerald-50" : "mr-8 bg-stone-100"}`}>
+          <li key={m.id} className={`rounded-lg px-3 py-2 text-sm whitespace-pre-line ${i >= seen ? "msg-in" : ""} ${m.sender_role === "ngo" ? "ml-8 bg-emerald-100" : "mr-8 border border-stone-200 bg-surface"}`}>
             <p className="mb-1 text-xs font-medium text-stone-500">{m.sender_role === "ngo" ? "You" : "Assistant"}</p>
             {m.meta.evidence_id && m.sender_role === "ngo" ? (
               <Attachment
@@ -262,13 +281,13 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
           </li>
         ))}
         {pending !== null && (
-          <li className="msg-in ml-8 rounded-lg bg-emerald-50 px-3 py-2 text-sm whitespace-pre-line">
+          <li className="msg-in ml-8 rounded-lg bg-emerald-100 px-3 py-2 text-sm whitespace-pre-line">
             <p className="mb-1 text-xs font-medium text-stone-500">You</p>
             {pending}
           </li>
         )}
         {pending !== null && (
-          <li className="msg-in mr-8 w-16 rounded-lg bg-stone-100 px-3 py-3" aria-label="The assistant is typing">
+          <li className="msg-in mr-8 w-16 rounded-lg border border-stone-200 bg-surface px-3 py-3" aria-label="The assistant is typing">
             <span className="typing-dots"><i /><i /><i /></span>
           </li>
         )}
@@ -286,7 +305,7 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
           }}
         >
           <input className={inputClass} placeholder="Type your reply…" value={text} onChange={(e) => setText(e.target.value)} />
-          <Button type="submit" disabled={busy || !text.trim()}>Send</Button>
+          <Button variant="accent" type="submit" disabled={busy || !text.trim()}>Send</Button>
         </form>
       )}
       {!closed && lastAwaiting !== "confirm_claims" && (
@@ -333,7 +352,7 @@ function Attachment({ evidenceId, filename, fileType, onLoaded }: { evidenceId: 
     <div>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt={filename} onLoad={onLoaded} className="max-h-56 rounded-md border border-stone-200 bg-white" />
+        <img src={src} alt={filename} onLoad={onLoaded} className="max-h-56 rounded-md border border-stone-200 bg-surface" />
       ) : (
         <div className="flex h-20 w-40 items-center justify-center rounded-md border border-dashed border-stone-300 text-xs text-stone-500">
           {isImage && !missing ? "Loading…" : "Document"}
@@ -398,7 +417,7 @@ function QuickReplies({ thread, busy, run, onPending }: { thread: Thread; busy: 
             {a.label}
           </Link>
         ) : (
-          <button key={a.label} className={chip} disabled={busy} onClick={() => {
+          <button key={a.label} className={a.kind === "confirm_all" ? "rounded-full bg-coral-500 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-coral-600 disabled:opacity-50" : chip} disabled={busy} onClick={() => {
               onPending(a.kind === "set_amount" ? a.label : a.label.replace(/^Yes, /, ""));
               run(() => go(a));
             }}>
@@ -419,7 +438,7 @@ function Claims({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run
       <h2 className="font-semibold">What you reported</h2>
       <p className="mt-0.5 text-xs text-stone-500">Use the buttons in the chat to confirm or add receipts.</p>
       {live.length === 0 && <p className="mt-2 text-sm text-stone-500">Nothing yet.</p>}
-      <ul className="mt-3 space-y-2">
+      <ul className="mt-2">
         {groupClaims(live).map((g) => <ClaimCard key={g[0].id} claims={g} />)}
       </ul>
       <details className="mt-4 border-t border-stone-100 pt-3">
@@ -471,7 +490,7 @@ function ClaimCard({ claims }: { claims: Claim[] }) {
   const title = (expenses[0] ?? impacts[0]).description;
   const waiting = claims.some((c) => c.status === "proposed");
   return (
-    <li className="rounded-lg border border-stone-200 p-3 text-sm">
+    <li className="border-b border-stone-200 py-3 text-sm last:border-b-0">
       <p className="font-medium">{title}</p>
       {expenses.map((c) => (
         <div key={c.id} className="mt-1 text-stone-600">
@@ -497,12 +516,35 @@ function ClaimCard({ claims }: { claims: Claim[] }) {
 function EvidenceList({ thread, busy, run }: { thread: Thread; busy: boolean; run: Run }) {
   if (thread.evidence.length === 0) return null;
   return (
-    <Card>
-      <h2 className="font-semibold">Documents</h2>
-      <ul className="mt-3 space-y-3">
+    // Closed until the NGO asks for it; the choice survives the page reload after changing sharing.
+    <Card className="scroll-mt-4">
+    <details
+      id="documents"
+      className="group"
+      ref={(el) => {
+        if (el && !el.dataset.init) {
+          el.dataset.init = "1";
+          try {
+            el.open = sessionStorage.getItem("ngolog.docs.open") === "1";
+          } catch {}
+        }
+      }}
+      onToggle={(e) => {
+        try {
+          sessionStorage.setItem("ngolog.docs.open", e.currentTarget.open ? "1" : "0");
+        } catch {}
+      }}
+    >
+      <summary className="flex cursor-pointer items-center gap-2 font-semibold">
+        Documents <span className="text-sm font-normal text-stone-500">({thread.evidence.length})</span>
+        <span className="ml-auto text-sm font-normal text-emerald-800 group-open:hidden">Show</span>
+        <span className="ml-auto hidden text-sm font-normal text-emerald-800 group-open:inline">Hide</span>
+      </summary>
+      <ul className="mt-2">
         {thread.evidence.map((ev) => <EvidenceRow key={ev.id} ev={ev} busy={busy} run={run} />)}
       </ul>
       <p className="mt-3 text-xs text-stone-500">Documents are private unless you share them with donors.</p>
+    </details>
     </Card>
   );
 }
@@ -511,7 +553,7 @@ function EvidenceRow({ ev, busy, run }: { ev: Evidence; busy: boolean; run: Run 
   const values = { ...(ev.extracted ?? {}), ...(ev.confirmed ?? {}) } as { total?: number; merchant?: string; receipt_number?: string };
   const [total, setTotal] = useState(values.total != null ? String(values.total) : "");
   return (
-    <li className="rounded-lg border border-stone-200 p-3 text-sm">
+    <li className="border-b border-stone-200 py-3 text-sm last:border-b-0">
       <p className="font-medium">{ev.original_filename}</p>
       <p className="text-stone-600">
         {values.merchant && `${values.merchant} · `}

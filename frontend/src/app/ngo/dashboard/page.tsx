@@ -47,7 +47,7 @@ export default function NgoDashboard() {
     <Page>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Your campaigns</h1>
-        <Link href="/ngo/campaigns/new"><Button>New campaign</Button></Link>
+        <Link href="/ngo/campaigns/new"><Button variant="accent">New campaign</Button></Link>
       </div>
       <ErrorText error={error} />
       <div className="mt-6 space-y-3">
@@ -64,9 +64,9 @@ export default function NgoDashboard() {
                 {c.next_followup_at && ` · next update due ${new Date(c.next_followup_at + "Z").toLocaleDateString()}`}
               </p>
             </div>
-            <Link href={`/campaigns/${c.id}`} className="text-sm text-emerald-800 hover:underline">Public page</Link>
-            <Link href={`/ngo/campaigns/${c.id}/reporting`} className="text-sm text-emerald-800 hover:underline">{waiting[c.id] ? "Reply now" : "Reporting"}</Link>
-            <Link href={`/ngo/campaigns/${c.id}/updates`} className="text-sm text-emerald-800 hover:underline">Donor updates</Link>
+            <Link href={`/campaigns/${c.id}`} className="text-sm text-emerald-800 hover:text-coral-500 hover:underline">Public page</Link>
+            <Link href={`/ngo/campaigns/${c.id}/reporting`} className="text-sm text-emerald-800 hover:text-coral-500 hover:underline">{waiting[c.id] ? "Reply now" : "Reporting"}</Link>
+            <Link href={`/ngo/campaigns/${c.id}/updates`} className="text-sm text-emerald-800 hover:text-coral-500 hover:underline">Donor updates</Link>
           </Card>
         ))}
       </div>

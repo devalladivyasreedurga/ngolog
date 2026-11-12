@@ -123,7 +123,7 @@ export default function NewCampaign() {
             {showLimits && (
               <textarea className={`${inputClass} text-sm`} rows={3} aria-label="Limitations shown to donors" value={plan.limitations} onChange={(ev) => setPlan({ ...plan, limitations: ev.target.value })} />
             )}
-            <Button onClick={acceptAndPublish} disabled={busy}>Publish campaign</Button>
+            <Button variant="accent" onClick={acceptAndPublish} disabled={busy}>Publish campaign</Button>
             <ErrorText error={error} />
           </Card>
         )

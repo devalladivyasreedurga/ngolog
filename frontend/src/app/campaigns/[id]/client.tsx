@@ -39,7 +39,7 @@ export default function CampaignPage() {
             <p className="text-sm text-stone-500">of {money(c.target_amount_cents, c.currency)} goal · {c.donor_count} {c.donor_count === 1 ? "donor" : "donors"}</p>
           </div>
           <div className="mt-2 h-2 rounded-full bg-stone-100">
-            <div className="h-2 rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
+            <div className="h-2 rounded-full bg-coral-500" style={{ width: `${pct}%` }} />
           </div>
           <dl className="mt-5 grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
             <Tile
@@ -77,12 +77,12 @@ export default function CampaignPage() {
       {timeline.entries.length === 0 && !timeline.reporting_overdue && (
         <p className="mt-2 text-stone-500">No updates yet. Each update appears here after the organization reviews and approves it.</p>
       )}
-      <ol className="mt-4 space-y-4">
+      <ol className="mt-4 max-w-2xl space-y-4">
         {timeline.entries.map(({ update, provenance, photos }) => (
           <li key={update.id}>
-            <Card>
-              <UpdateCard update={update} items={provenance} photos={photos} apiUrl={API_URL} />
-            </Card>
+            
+              <UpdateCard update={update} items={provenance} photos={photos} apiUrl={API_URL} compact />
+            
           </li>
         ))}
       </ol>

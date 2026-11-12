@@ -71,7 +71,7 @@ function CampaignCard({ timeline, donations }: Supported) {
       <p className="text-xs uppercase tracking-wide text-stone-500">{c.ngo_name}</p>
       <h2 className="mt-1 text-lg font-semibold">{c.title}</h2>
       <div className="mt-3 h-2 rounded-full bg-stone-100">
-        <div className="h-2 rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
+        <div className="h-2 rounded-full bg-coral-500" style={{ width: `${pct}%` }} />
       </div>
       <p className="mt-1 text-xs text-stone-500">{money(c.donations_received_cents, c.currency)} of {money(c.target_amount_cents, c.currency)} raised</p>
 

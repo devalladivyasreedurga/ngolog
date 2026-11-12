@@ -5,18 +5,19 @@ import { useAuth } from "@/lib/auth";
 import { STATUS_LABEL, type EvidenceReviewStatus } from "@/lib/contracts";
 
 export function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <section className={`rounded-xl border border-stone-200 bg-white p-5 ${className}`}>{children}</section>;
+  return <section className={`rounded-xl border border-stone-200 bg-surface p-5 ${className}`}>{children}</section>;
 }
 
 export function Button({
   children,
   variant = "primary",
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" | "accent" }) {
   const styles = {
     primary: "bg-emerald-700 text-white hover:bg-emerald-800",
-    secondary: "border border-stone-300 bg-white text-stone-800 hover:bg-stone-50",
+    secondary: "border border-stone-300 bg-surface text-stone-800 hover:bg-stone-50",
     ghost: "text-emerald-800 hover:underline",
+    accent: "bg-coral-500 text-white hover:bg-coral-600",
   }[variant];
   return (
     <button
@@ -29,7 +30,7 @@ export function Button({
 }
 
 export const inputClass =
-  "w-full rounded-lg border border-stone-300 bg-white px-3 py-2 text-sm focus:border-emerald-700 focus:outline-none";
+  "w-full rounded-lg border border-stone-300 bg-surface px-3 py-2 text-sm focus:border-emerald-700 focus:outline-none";
 
 const STATUS_COLORS: Record<EvidenceReviewStatus, string> = {
   reported: "bg-stone-100 text-stone-700",
@@ -55,39 +56,39 @@ export function ErrorText({ error }: { error: string | null }) {
 export function Nav() {
   const { user, signOut } = useAuth();
   return (
-    <header className="border-b border-stone-200 bg-white">
+    <header className="bg-emerald-400 text-emerald-950">
       <nav className="mx-auto flex max-w-5xl flex-wrap items-center gap-4 px-4 py-3 text-sm">
-        <Link href="/" className="text-base font-semibold text-emerald-800">
-          NGOLog
+        <Link href="/" className="text-base font-semibold text-emerald-950">
+          NGOLog<span className="text-coral-500">.</span>
         </Link>
-        <Link href="/" className="text-stone-700 hover:underline">
+        <Link href="/" className="text-emerald-950/80 hover:text-emerald-950 hover:underline">
           Campaigns
         </Link>
         {user?.role === "ngo_admin" && (
-          <Link href="/ngo/dashboard" className="text-stone-700 hover:underline">
+          <Link href="/ngo/dashboard" className="text-emerald-950/80 hover:text-emerald-950 hover:underline">
             NGO dashboard
           </Link>
         )}
         {(user?.role === "ngo_admin" || user?.role === "reviewer") && (
-          <Link href="/accountability" className="text-stone-700 hover:underline">
+          <Link href="/accountability" className="text-emerald-950/80 hover:text-emerald-950 hover:underline">
             Accountability
           </Link>
         )}
         {user?.role === "donor" && (
-          <Link href="/donor/dashboard" className="text-stone-700 hover:underline">
+          <Link href="/donor/dashboard" className="text-emerald-950/80 hover:text-emerald-950 hover:underline">
             My campaigns
           </Link>
         )}
         <span className="ml-auto" />
         {user ? (
           <>
-            <span className="text-stone-500">{user.email}</span>
-            <Button variant="ghost" onClick={signOut}>
+            <span className="text-emerald-950/70">{user.email}</span>
+            <Button variant="ghost" className="!text-emerald-950" onClick={signOut}>
               Sign out
             </Button>
           </>
         ) : (
-          <Link href="/signin" className="font-medium text-emerald-800 hover:underline">
+          <Link href="/signin" className="font-medium text-emerald-950 hover:underline">
             Sign in
           </Link>
         )}

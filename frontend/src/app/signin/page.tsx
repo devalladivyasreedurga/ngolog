@@ -30,7 +30,8 @@ export default function SignIn() {
 
   return (
     <Page>
-      <Card className="mx-auto max-w-md">
+      <div className="flex min-h-[65vh] items-center justify-center">
+      <Card className="w-full max-w-md">
         <h1 className="text-xl font-semibold">Sign in</h1>
         <p className="mt-1 text-sm text-stone-600">Demo sign-in: no password. Accounts are created on first use.</p>
         <div className="mt-4 flex gap-2">
@@ -53,10 +54,11 @@ export default function SignIn() {
             <option value="ngo_admin">NGO admin</option>
             <option value="reviewer">Platform reviewer (allowlisted)</option>
           </select>
-          <Button type="submit">Continue</Button>
+          <Button variant="accent" type="submit">Continue</Button>
           <ErrorText error={error} />
         </form>
       </Card>
+      </div>
     </Page>
   );
 }

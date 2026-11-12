@@ -63,11 +63,11 @@ export default function Updates() {
 
   return (
     <Page>
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">Donor update</h1>
-        <span className="ml-auto" />
-        <Link href={`/ngo/campaigns/${id}/reporting`} className="text-sm text-emerald-800 hover:underline">← Back to reporting</Link>
-      </div>
+      <Link href={`/ngo/campaigns/${id}/reporting`} className="text-sm text-emerald-800 hover:underline">← Back to reporting</Link>
+      <h1 className="mt-2 text-2xl font-semibold">Review your update</h1>
+      <p className="mt-0.5 min-h-5 text-sm text-stone-500">
+        {entries === null ? "" : pending ? "This is what donors will see. Nothing is shared until you publish." : "Updates donors have already seen appear below."}
+      </p>
       <ErrorText error={error} />
       {entries === null && !error && <p className="mt-4 text-stone-500">Loading…</p>}
 
@@ -90,12 +90,17 @@ export default function Updates() {
 
       {pending && (
         <div className="mt-6">
-          <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-            Preview: this is exactly what donors will see. Nothing is shared until you publish.
-          </p>
-          <Card className="mt-3">
-            <UpdateCard update={pending.update} items={pending.provenance} photos={pending.photos} apiUrl={API_URL} showWording={false} />
-          </Card>
+          
+            <UpdateCard update={pending.update} items={pending.provenance} photos={pending.photos}
+              apiUrl={API_URL}
+              showWording={false}
+              action={
+                <Button variant="accent" className="!text-white" disabled={busy} onClick={() => publish(pending)}>
+                  {busy ? "Publishing…" : "Publish to donors"}
+                </Button>
+              }
+            />
+          
           <details className="mt-3 text-sm">
             <summary className="cursor-pointer text-emerald-800">How was this written?</summary>
             <ul className="mt-2 space-y-2 text-stone-700">
@@ -112,9 +117,6 @@ export default function Updates() {
             </ul>
             <p className="mt-2 text-xs text-stone-500">Only facts you confirmed and documents you uploaded are used. Nothing is added by the AI.</p>
           </details>
-          <Button className="mt-4" disabled={busy} onClick={() => publish(pending)}>
-            {busy ? "Publishing…" : "Publish to donors"}
-          </Button>
         </div>
       )}
 
@@ -124,9 +126,9 @@ export default function Updates() {
           <ol className="mt-3 space-y-3">
             {published.map((e) => (
               <li key={e.update.id}>
-                <Card>
+                
                   <UpdateCard update={e.update} items={e.provenance} photos={e.photos} apiUrl={API_URL} showWording={false} />
-                </Card>
+                
               </li>
             ))}
           </ol>

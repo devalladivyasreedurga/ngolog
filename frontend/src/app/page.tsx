@@ -33,7 +33,7 @@ export default function Home() {
                 <h2 className="mt-1 text-lg font-semibold">{c.title}</h2>
                 <p className="mt-2 line-clamp-2 text-sm text-stone-600">{c.description}</p>
                 <div className="mt-4 h-2 rounded-full bg-stone-100">
-                  <div className="h-2 rounded-full bg-emerald-600" style={{ width: `${pct}%` }} />
+                  <div className="h-2 rounded-full bg-coral-500" style={{ width: `${pct}%` }} />
                 </div>
                 <p className="mt-2 text-sm text-stone-700">
                   {money(c.donations_received_cents, c.currency)} of {money(c.target_amount_cents, c.currency)} raised

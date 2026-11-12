@@ -1,8 +1,49 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f7f5;
-  --foreground: #1c1c1a;
+  --background: #f7f5ef; /* off-white, about 60% of the screen */
+  --foreground: #22261f;
+}
+
+/* Palette: off-white #f7f5ef (60%), sage #9caf88 (30%), tomato #E8412C (10%).
+   The existing emerald, stone and amber classes are remapped here so every page follows it.
+   Sage is light, so text and buttons use its deeper steps (700 to 950); 400 is the brand sage itself. */
+@theme {
+  --color-surface: #fdfcf9;
+  --color-emerald-50: #f1f4ec;
+  --color-emerald-100: #e2e9d9;
+  --color-emerald-200: #c8d4b8;
+  --color-emerald-400: #9caf88;
+  --color-emerald-500: #8aa076;
+  --color-emerald-600: #6b8258;
+  --color-emerald-700: #556b45;
+  --color-emerald-800: #43563a;
+  --color-emerald-900: #34432d;
+  --color-emerald-950: #232d1e;
+  --color-stone-50: #f4f2eb;
+  --color-stone-100: #eceae1;
+  --color-stone-200: #deddd2;
+  --color-stone-300: #c9c8bb;
+  --color-stone-400: #9e9d90;
+  --color-stone-500: #747367;
+  --color-stone-600: #58574d;
+  --color-stone-700: #3f3e37;
+  --color-stone-800: #2b2a25;
+  --color-stone-900: #1c1c19;
+  --color-coral-50: #fdeeea;
+  --color-coral-100: #fad7cf;
+  --color-coral-500: #e8412c;
+  --color-coral-600: #cf3320;
+  --color-coral-800: #9c2616;
+  --color-coral-900: #761b0f;
+  --color-amber-50: #fdeeea;
+  --color-amber-100: #fad7cf;
+  --color-amber-800: #9c2616;
+  --color-amber-900: #761b0f;
+  --color-sky-50: #e9eef0;
+  --color-sky-800: #34505a;
+  --color-violet-50: #eeeaf0;
+  --color-violet-800: #584660;
 }
 
 @theme inline {
