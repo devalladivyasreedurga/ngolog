@@ -91,7 +91,7 @@ class ClaudeProvider:
             "NGO says it spent, including what was bought. Impacts are things it says it did "
             "or delivered to people; a purchase is an expense, not also an impact. Write each "
             "description as a short noun phrase for the item or activity, such as '25 school kits' or "
-            "'kits handed out to students', never a sentence or a verb phrase like 'Purchased 25 kits'. Use only "
+            "'20 kits handed out to students' (include the number when one is given), never a sentence or a verb phrase like 'Purchased 25 kits'. Use only "
             "what the message states; do not infer amounts. If the NGO gives no amount for an "
             "expense, leave amount null (never 0). Set amount_uncertain only when the NGO "
             "explicitly hedges. Leave unanswered_questions empty. Set is_report to false when the "

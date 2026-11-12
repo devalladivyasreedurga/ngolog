@@ -176,6 +176,8 @@ def _phrase(c: ExpenseClaim | ImpactClaim) -> str:
     if isinstance(c, ExpenseClaim):
         about = "about " if c.amount_uncertain else ""
         return f"{c.description} for {about}{money(c.amount_cents, c.currency)}"
+    if re.match(r"\d", c.description.strip()):
+        return c.description  # the description already carries the number, e.g. "20 kits handed out"
     if c.quantity is None:
         return c.description
     unit = (c.unit or "").strip()
@@ -220,7 +222,7 @@ def next_receipt_prompt(db: Session, req: ReportingRequest) -> tuple[str, dict] 
                     {"kind": "upload", "label": "Upload another receipt", "claim_type": "expense", "claim_id": c.id},
                     {"kind": "no_evidence", "label": "No more receipts", "claim_type": "expense", "claim_id": c.id},
                 ]
-                return inv.question, {"step": "clarify", "awaiting": "ask_clarification", "claim_id": c.id, "actions": actions}
+                return f"Back to the earlier question about {c.description}. {inv.question}", {"step": "clarify", "awaiting": "ask_clarification", "claim_id": c.id, "actions": actions}
     return None
 
 
@@ -243,8 +245,10 @@ def _what_next(db: Session, req: ReportingRequest) -> tuple[str, dict] | None:
     return next_receipt_prompt(db, req) or delivery_prompt(db, req)
 
 
-def confirm_proposed(db: Session, req: ReportingRequest, user_id: str) -> None:
+def confirm_proposed(db: Session, req: ReportingRequest, user_id: str, echo: bool = True) -> None:
     """The NGO confirmed everything proposed. Mark it reported, then ask the single next thing."""
+    if echo:  # a button tap shows up in the chat as the NGO's own message; typed replies are already there
+        say(db, req, "Yes, that's right", MessageSender.NGO, user_id=user_id)
     confirmed = _proposed(db, req)
     for c in confirmed:
         c.status = ClaimStatus.REPORTED
@@ -258,6 +262,7 @@ def confirm_proposed(db: Session, req: ReportingRequest, user_id: str) -> None:
 
 
 def reject_proposed(db: Session, req: ReportingRequest, user_id: str) -> None:
+    say(db, req, "Not quite", MessageSender.NGO, user_id=user_id)
     for c in _proposed(db, req):
         c.status = ClaimStatus.WITHDRAWN
         audit(db, actor_type="user", actor_id=user_id, action="claim.withdraw", entity_type=f"{'expense' if isinstance(c, ExpenseClaim) else 'impact'}_claim", entity_id=c.id)
@@ -341,7 +346,7 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
     withdrawn_now: list = []
     if awaiting == "confirm_claims":
         if _is(text, YES_WORDS):
-            confirm_proposed(db, req, user_id)
+            confirm_proposed(db, req, user_id, echo=False)
             return
         for c in _proposed(db, req):  # a correction replaces what was proposed
             withdrawn_now.append(c)

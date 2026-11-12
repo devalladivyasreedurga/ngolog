@@ -313,8 +313,30 @@ def test_the_earlier_receipt_gap_comes_back_after_a_new_expense_is_confirmed(cli
     say(client, ngo, req_id, "We also bought 10 pens for $30.")
     thread = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()
     last = agent_msgs(thread)[-1]
-    assert "$80.00" in last["content"] and last["meta"]["awaiting"] == "ask_clarification"  # the open gap, not forgotten
+    assert last["content"].startswith("Back to the earlier question") and "$80.00" in last["content"]  # the open gap, not forgotten
     assert "no_evidence" in action_kinds(last) and "upload" in action_kinds(last)
     thread = client.post(f"/api/claims/expense/{claim['id']}/no-evidence", json={"explanation": "No more receipts."}, headers=ngo).json()
     last = agent_msgs(thread)[-1]
     assert "$30.00" in last["content"] and last["meta"]["awaiting"] == "ask_receipt"  # then the new expense
+
+
+def test_button_taps_appear_in_the_chat_as_the_ngos_messages(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    thread = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()
+    assert [m["content"] for m in thread["messages"] if m["sender_role"] == "ngo"][-1] == "Yes, that's right"
+    say(client, ngo, req_id, "no")  # a typed reply is never echoed twice
+    req2 = open_request(client, ngo, published_campaign, key="demo-2")
+    say(client, ngo, req2, "We bought 5 pens for $10.")
+    thread = say(client, ngo, req2, "yes")
+    assert sum(1 for m in thread["messages"] if m["sender_role"] == "ngo" and m["content"].lower().startswith("yes")) == 1
+    say(client, ngo, req2, "We also bought 3 pads for $9.")
+    thread = client.post(f"/api/reporting-requests/{req2}/claims/reject", headers=ngo).json()
+    assert [m["content"] for m in thread["messages"] if m["sender_role"] == "ngo"][-1] == "Not quite"
+
+
+def test_a_resurfaced_gap_has_a_lead_in_and_an_impact_phrase_keeps_one_number():
+    from app.agent.workflow import _phrase
+    from app.db.models import ImpactClaim
+
+    assert _phrase(ImpactClaim(description="20 kits handed out to students", quantity=20.0, unit="kits")) == "20 kits handed out to students"
