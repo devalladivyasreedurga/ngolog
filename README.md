@@ -1,48 +1,45 @@
 # NGOLog
 
-**Your donation shouldn't be the end of the story.**
+Donation transparency for NGO campaigns. Donors give through PayPal. An AI assistant asks the NGO how the money was spent, checks receipts against what was reported, and drafts a donor update that the NGO approves before anyone sees it.
 
-NGOLog is an AI-powered donation transparency platform built for the PayPal AI Hackathon. NGOs run campaigns,
-donors give through PayPal, and an AI accountability assistant follows up with the NGO about how funds were used,
-asks for suitable evidence, checks documents for consistency, asks about discrepancies, and drafts campaign-level
-donor updates. Nothing reaches donors until the NGO approves it.
-
-NGOLog does **not** hold funds, release payouts or declare fraud. "Consistent" means documents match what the NGO
-reported; it is not an audit.
-
-## Try it (for judges)
+Built for the PayPal AI Hackathon. NGOLog holds no funds, makes no payouts and never calls anyone fraudulent. "Consistent" means a document matches what the NGO reported. It is not an audit.
 
 **Live demo:** https://ngolog-web.onrender.com (API: https://ngolog-api.onrender.com)
 
-The demo runs on free hosting, so after idle time the first load can take up to a minute while the services wake. Everything runs against the PayPal **sandbox** only; no real money moves.
+The demo is on free hosting, so the first load after idle can take about a minute. Everything uses the PayPal **sandbox**. No real money moves.
 
-1. **Donor:** open `/signin` and click **Demo donor**, open *Supply 50 students with school kits*, click the PayPal **Donate** button and pay with any PayPal sandbox personal (buyer) account. Create one at developer.paypal.com under Sandbox → Accounts if you don't have one. The campaign total updates from the server-side capture, and *My donations* shows whether PayPal's signed webhook confirmed it.
-2. **NGO:** (updates only start once a campaign has a donation, so do step 1 first) sign out, click **Demo NGO**, open **Reporting** on the campaign and press **Start an update now**. Reply in plain words (for example "We bought 25 kits from Demo Stationers for $500 and handed out 20."), confirm the proposed claims, then upload the fictional receipts from `scripts/demo_assets/` (`receipt-420.png`, then `receipt-80.png`; use `rehearsal-receipt-420.png` and `rehearsal-receipt-80.png` for a practice run, because a receipt number already submitted by the same NGO is flagged and not counted again). The $420 receipt raises a question about the $80 gap; the $80 receipt reconciles it and a donor update is drafted. Click **Review the draft** to see exactly what donors will see, then **Publish to donors**.
-3. **Public timeline:** the campaign page shows the published update as cards, with donations received, reported spending and spending matched by receipts kept separate. Tap the small ⓘ next to each number for what it means.
-4. **Reviewer:** on `/signin` choose *Platform reviewer* with the email `reviewer@ngolog.org` to open the **Accountability** console (AG Grid) and see every campaign, open question and overdue request. The *Restock the village reading room* campaign is seeded as overdue.
+## Features
 
-What NGOLog does not do, on purpose: it holds no funds, pays no one, and never declares anyone fraudulent. "Consistent" means the documents match what the NGO reported, not that anything was audited.
+- **Campaigns:** an NGO creates a campaign, reviews an AI-drafted reporting plan, and publishes.
+- **Donations:** PayPal Orders v2 with server-side capture. A signed webhook confirms each donation.
+- **Spending updates:** the assistant asks what was spent, in plain chat. The NGO confirms the claims it proposes, or adds them by hand. Updates open on a schedule, or the NGO can start one at any time.
+- **Receipt checks:** the NGO uploads receipts. A deterministic check compares totals to the claim. A $500 claim with a $420 receipt triggers a question about the $80 gap. Reused receipts are flagged.
+- **Donor updates:** drafted only from stored records, shown to the NGO as a preview, and published after approval. Photos are shared with donors by default and can be unticked. Receipts stay private.
+- **Public timeline:** donations received, reported spending and spending matched by receipts are shown separately.
+- **Reviewer console:** an AG Grid view of every campaign, open question and overdue request.
+- **Notifications:** in-app reminders for the NGO, and a donor email when an update is published.
 
-Known limits of the free demo: uploaded receipt files are cleared when the server restarts (the amounts, claims and checks are kept in the database), and Elastic search runs through its built-in Postgres fallback unless `ELASTIC_URL` is set.
+Rules the code enforces: totals come from Postgres, never from a model. The AI proposes, the NGO decides. NGO text and documents are treated as data, not instructions. PayPal calls stay in `backend/app/payments/`.
 
-## What works today (P0 vertical slice)
+## Try it
 
-1. NGO creates a campaign; a reporting plan is drafted (Claude, or a template in manual mode), edited and accepted, then the campaign is published.
-2. Donor gives through the PayPal JS SDK v6 Donate button. The backend creates and captures a PayPal Orders v2 order (with `PayPal-Request-Id` idempotency) and records the capture; a verified `PAYMENT.CAPTURE.COMPLETED` webhook confirms it.
-3. The assistant opens a reporting request (idempotent per cycle) and asks for a spending update.
-4. NGO replies in plain words; Claude extracts proposed expense/activity claims for the NGO to confirm (or the NGO enters them by hand).
-5. NGO uploads receipts; Claude reads the totals (or the NGO types them). A deterministic check compares documents to the claim: $500 reported vs a $420 receipt opens a focused $80 question.
-6. A second $80 receipt reconciles the claim. The donor update draft is built only from stored records, with per-sentence provenance.
-7. NGO approves and publishes; the public campaign timeline and donor notifications update.
+1. **Donor:** open `/signin`, click **Demo donor**, open *Supply 50 students with school kits*, and donate with a PayPal sandbox buyer account (create one at developer.paypal.com under Sandbox → Accounts).
+2. **NGO:** sign out, click **Demo NGO**, open **Reporting** on the campaign and click **Start an update**. Updates need at least one donation, so do step 1 first.
+   - Reply: "We bought 25 kits from Demo Stationers for $500 and handed out 20."
+   - Confirm the proposed claims.
+   - Upload `receipt-420.png`, then `receipt-80.png` from `scripts/demo_assets/`. Use the `rehearsal-` copies for a practice run, because a receipt number already submitted is flagged.
+   - The $80 receipt closes the gap and a draft is created. Click **Review the draft**, then **Publish to donors**.
+3. **Public page:** the campaign page shows the published update. The ⓘ icons explain each number.
+4. **Reviewer:** on `/signin` choose *Platform reviewer* with `reviewer@ngolog.org` to open the **Accountability** console.
 
-Backend tests cover the full story plus idempotency, authorization, privacy and labelling rules (`backend/tests`).
+Limits of the free demo: uploaded files are cleared when the server restarts (claims and checks stay in the database). Elastic search uses its Postgres fallback unless `ELASTIC_URL` is set.
 
 ## Run locally
 
-Requirements: Python 3.12+, Node 20+.
+Requires Python 3.12+ and Node 20+.
 
 ```bash
-cp .env.example .env            # add PayPal sandbox + Anthropic keys
+cp .env.example .env     # add PayPal sandbox and Anthropic keys
 cd backend
 python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 .venv/bin/alembic upgrade head
@@ -53,39 +50,49 @@ python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 cd frontend
 echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > .env.local
 echo "NEXT_PUBLIC_PAYPAL_CLIENT_ID=<sandbox client id>" >> .env.local
-npm install && npm run dev       # http://localhost:3000
+npm install && npm run dev     # http://localhost:3000
 ```
 
-Run tests: `cd backend && .venv/bin/python -m pytest -q`
+Sign in at `/signin` with the demo buttons (passwordless demo auth).
 
-Sign in at `/signin` with the demo NGO or demo donor buttons (passwordless demo auth).
+Load the demo campaigns and fictional receipts:
 
-Load the demo story: `backend/.venv/bin/python scripts/seed_demo.py`. It creates demo accounts, the school-supplies campaign, an overdue campaign and fictional receipts in `scripts/demo_assets/`. It creates no donations; demo money is always a real sandbox capture. Set `REVIEWER_EMAILS=reviewer@ngolog.org` to use the reviewer account.
+```bash
+backend/.venv/bin/python scripts/seed_demo.py
+```
 
-### PayPal sandbox setup
+Set `REVIEWER_EMAILS=reviewer@ngolog.org` to use the reviewer account.
 
-1. developer.paypal.com → Apps & Credentials → Sandbox → create an app; copy the client ID and secret into `.env` (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`) and the client ID into `frontend/.env.local`.
-2. Add a webhook to the app pointing at `<public backend URL>/api/paypal/webhook` with event `PAYMENT.CAPTURE.COMPLETED`; copy its ID into `PAYPAL_WEBHOOK_ID`. Locally, expose the backend with a tunnel (e.g. ngrok). Without the webhook, donations still record from the server-side capture and show "webhook pending".
-3. Pay with a sandbox personal (buyer) account from Sandbox → Accounts.
+Run the tests:
+
+```bash
+cd backend && .venv/bin/python -m pytest -q
+```
+
+### PayPal sandbox
+
+1. At developer.paypal.com, go to Apps & Credentials → Sandbox, create an app, and copy the client ID and secret into `.env` (`PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`). Put the client ID in `frontend/.env.local` too.
+2. Optional: add a webhook for `PAYMENT.CAPTURE.COMPLETED` pointing at `<backend URL>/api/paypal/webhook` and set `PAYPAL_WEBHOOK_ID`. Locally, use a tunnel such as ngrok. Without it, donations still record from the server-side capture and show "webhook pending".
+3. Pay with a sandbox personal (buyer) account.
 
 Without `ANTHROPIC_API_KEY` the app runs in manual mode: the NGO enters claims and receipt totals by hand.
 
 ## Tools
 
-| Tool | Role |
+| Tool | Use |
 |---|---|
-| PayPal Orders v2, JS SDK v6, Webhooks (sandbox) | Donation checkout, server-side capture, verified webhook confirmation |
-| Claude (`claude-opus-5-5`) | Reporting-plan drafting, claim extraction from NGO messages, receipt reading (structured outputs) |
-| FastAPI, SQLAlchemy, Alembic, Postgres/SQLite | API, ledger of donations/claims/evidence, audit log |
-| Next.js 16 | Campaign, donor and NGO pages |
-| LangGraph | Accountability workflow with interrupt/resume, one thread per reporting request |
-| Elastic | Campaign-scoped retrieval over reports and receipts, reused-receipt search (Postgres fallback) |
-| AG Grid Community | Accountability console: claims, evidence status, gaps, reporting requests, reviewer actions |
-| Render | Blueprint in `render.yaml`: API, web app, Postgres, disk for evidence uploads |
-| Built | Zapier MCP donor "new update" email on publish (needs `ZAPIER_MCP_*` in `.env`; in-app only when unset); reminders are in-app |
+| PayPal Orders v2, JS SDK v6, Webhooks (sandbox) | Donation checkout, capture, webhook confirmation |
+| Claude (`claude-opus-5-5`) | Reporting plan, claim extraction, receipt reading |
+| LangGraph | Accountability workflow that pauses for the NGO and resumes |
+| FastAPI, SQLAlchemy, Alembic, Postgres/SQLite | API, ledger of donations, claims and evidence, audit log |
+| Next.js 16 | NGO, donor and public pages |
+| Elastic | Campaign-scoped search over reports and receipts (Postgres fallback) |
+| AG Grid Community | Reviewer console |
+| Zapier MCP | Donor email when an update is published |
+| Render | Hosting via `render.yaml`: API, web app, Postgres, disk |
 
-## Repository map
+## Repository
 
-`contracts/` shared schemas · `backend/app/` API (ownership in `CLAUDE.md`) · `backend/tests/` · `frontend/src/` · `docs/spec.md` product spec · `docs/decisions.md` design log
+`contracts/` shared schemas · `backend/app/` API · `backend/tests/` · `frontend/src/` · `docs/spec.md` product spec · `docs/decisions.md` design log
 
 License: MIT (see `LICENSE`).
