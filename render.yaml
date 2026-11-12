@@ -38,6 +38,12 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: ZAPIER_MCP_SERVER_URL  # optional: donor "new update" emails; leave blank for in-app only
+        sync: false
+      - key: ZAPIER_MCP_AUTH_TOKEN
+        sync: false
+      - key: NOTIFICATION_FROM_EMAIL
+        sync: false
 
   - type: web
     name: ngolog-web
