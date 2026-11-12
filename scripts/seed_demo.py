@@ -32,6 +32,7 @@ USERS = [
 RECEIPTS = {
     "receipt-420.png": ("INV-1042", [("School kit, 21 units at $20.00", 420.00)]),
     "receipt-80.png": ("INV-1043", [("Kit carry bags, 40 units at $2.00", 80.00)]),
+    "receipt-25.png": ("INV-1044", [("Pens and notebooks set, 5 units at $5.00", 25.00)]),
     # Same story, different invoice numbers and bytes, for practice runs. The reused-receipt
     # check works across an NGO's campaigns, so rehearsing with the recording files would
     # make the recording flag them as already submitted.
