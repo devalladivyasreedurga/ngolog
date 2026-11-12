@@ -109,6 +109,16 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
   // Shown only until the server's answer arrives (the message count then moves on).
   const pending = busy && sent && sent.at === thread.messages.length ? sent.text : null;
   const setPending = (text: string) => setSent({ text, at: thread.messages.length });
+  // A reply that lands instantly feels robotic: hold it for a short "typing" moment.
+  const chatRun: Run = async (fn) => {
+    const started = Date.now();
+    await run(async () => {
+      const t = await fn();
+      const wait = 800 - (Date.now() - started);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      return t;
+    });
+  };
   const closed = thread.request.status === "completed";
   const listRef = useRef<HTMLOListElement>(null);
   const [seen] = useState(thread.messages.length); // messages already on screen do not animate
@@ -120,8 +130,8 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
   return (
     <Card className="lg:col-span-3">
       <div className="flex items-center justify-between">
-        <h2 className="font-semibold">Conversation with the accountability assistant</h2>
-        <span className="text-xs text-stone-500">{ROUND_STATUS[thread.request.status] ?? thread.request.status}</span>
+        <h2 className="font-semibold">Your update</h2>
+        <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-700">{ROUND_STATUS[thread.request.status] ?? thread.request.status}</span>
       </div>
       <ol ref={listRef} className="mt-4 max-h-[28rem] space-y-3 overflow-y-auto">
         {thread.messages.map((m, i) => (
@@ -151,7 +161,7 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
           </li>
         )}
       </ol>
-      {!closed && !busy && <QuickReplies thread={thread} busy={busy} run={run} onPending={setPending} />}
+      {!closed && !busy && <QuickReplies thread={thread} busy={busy} run={chatRun} onPending={setPending} />}
       {!closed && (
         <form
           className="mt-3 flex gap-2"
@@ -160,7 +170,7 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
             const content = text;
             setText("");
             setPending(content);
-            run(() => api<Thread>(`/api/reporting-requests/${thread.request.id}/messages`, { method: "POST", json: { content } }));
+            chatRun(() => api<Thread>(`/api/reporting-requests/${thread.request.id}/messages`, { method: "POST", json: { content } }));
           }}
         >
           <input className={inputClass} placeholder="Type your reply…" value={text} onChange={(e) => setText(e.target.value)} />
@@ -177,12 +187,6 @@ function Conversation({ thread, busy, run }: { thread: Thread; busy: boolean; ru
               {label}
             </button>
           ))}
-        </div>
-      )}
-      {thread.investigations.some((i) => i.status === "open" || i.status === "escalated") && (
-        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          <p className="font-medium">Open questions</p>
-          {thread.investigations.filter((i) => i.status === "open" || i.status === "escalated").map((i) => <p key={i.id} className="mt-1">{i.question}{i.status === "escalated" && " (sent to a reviewer)"}</p>)}
         </div>
       )}
     </Card>

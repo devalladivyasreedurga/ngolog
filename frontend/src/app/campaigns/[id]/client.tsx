@@ -52,7 +52,7 @@ export default function CampaignPage() {
               label="Reported spending"
               value={money(c.reported_expenses_cents, c.currency)}
               caption="Reported by the organization"
-              info="What the organization says it has spent. It is their statement, not an audited account balance."
+              info="What the organization says it has spent, from any funds. It is their statement, not an audited account balance."
             />
             <Tile
               label="Matched by receipts"
@@ -61,6 +61,11 @@ export default function CampaignPage() {
               info="The part of reported spending that reviewed receipts support. A matching receipt shows a purchase, not that items reached people."
             />
           </dl>
+          {c.reported_expenses_cents > c.donations_received_cents && (
+            <p className="mt-4 rounded-lg bg-stone-50 p-3 text-xs text-stone-600">
+              Reported spending can include the organization&apos;s other funds. Donations received is only what came through NGOLog.
+            </p>
+          )}
         </Card>
         <DonateBox campaignId={c.id} onDonated={load} />
       </div>

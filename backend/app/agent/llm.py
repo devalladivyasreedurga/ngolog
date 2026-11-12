@@ -94,7 +94,9 @@ class ClaudeProvider:
             "'kits handed out to students', never a sentence or a verb phrase like 'Purchased 25 kits'. Use only "
             "what the message states; do not infer amounts. If the NGO gives no amount for an "
             "expense, leave amount null (never 0). Set amount_uncertain only when the NGO "
-            "explicitly hedges. Leave unanswered_questions empty. " + UNTRUSTED_NOTE
+            "explicitly hedges. Leave unanswered_questions empty. Set is_report to false when the "
+            "message is a question, small talk or anything that does not describe money spent or "
+            "something done, and then leave expenses and impacts empty. " + UNTRUSTED_NOTE
         )
         text = f"Campaign: {campaign_title}\n<ngo_message>\n{ngo_message}\n</ngo_message>"
         return self._parse(ExtractedClaims, system, [{"type": "text", "text": text}])

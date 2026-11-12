@@ -153,6 +153,7 @@ class ExtractedClaims(BaseModel):
     """Proposed structured claims from an NGO's free-text reply. Never saved as
     'reported' until the NGO confirms them."""
 
+    is_report: bool = True  # False for questions, small talk or anything that is not a spending/activity report
     expenses: list[ExtractedExpense] = []
     impacts: list[ExtractedImpact] = []
     unanswered_questions: list[str] = []

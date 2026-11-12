@@ -109,7 +109,7 @@ class FakeAI:
         d = re.search(r"(?:distributed|handed out) (\d+)", ngo_message)
         if d:
             impacts.append(ExtractedImpact(description="kits distributed to students", quantity=float(d.group(1)), unit="kits"))
-        return ExtractedClaims(expenses=expenses, impacts=impacts)
+        return ExtractedClaims(is_report="?" not in ngo_message, expenses=expenses, impacts=impacts)
 
     def extract_receipt(self, data, media_type):
         m = re.search(rb"TOTAL=(\d+(?:\.\d+)?)", data)

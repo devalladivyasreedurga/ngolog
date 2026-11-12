@@ -259,6 +259,43 @@ def reject_proposed(db: Session, req: ReportingRequest, user_id: str) -> None:
 # ---------------------------------------------------------------- interpret / extract
 
 
+NOTHING_TO_REPORT = "No problem. There's nothing to report yet. Start an update again whenever you have something."
+
+
+def _has_reported(db: Session, req: ReportingRequest) -> bool:
+    expenses, impacts = claims_for_request(db, req)
+    return any(c.status == ClaimStatus.REPORTED for c in expenses + impacts)
+
+
+def _save_report(db: Session, req: ReportingRequest, campaign: Campaign, text: str) -> ActivityReport:
+    report = ActivityReport(campaign_id=campaign.id, reporting_request_id=req.id, description=text)
+    db.add(report)
+    db.flush()
+    retrieval.index(db, retrieval.doc_for_report(db, report))
+    return report
+
+
+def _decline_off_topic(db: Session, req: ReportingRequest, restore: list) -> None:
+    """A question or small talk: say what this chat is for, then repeat the one thing still needed."""
+    for c in restore:  # a stray question must not wipe a proposal that was waiting for a yes
+        c.status = ClaimStatus.PROPOSED
+    if restore:
+        db.flush()
+        propose_summary(db, req)
+        return
+    expenses, impacts = claims_for_request(db, req)
+    already = any(c.status == ClaimStatus.REPORTED for c in expenses + impacts)
+    say(
+        db,
+        req,
+        "I can only help with your spending update, so I can't answer that. "
+        + ("Anything else to add?" if already else "What did you spend campaign money on?"),
+        step="off_topic",
+        awaiting="ask_spend",
+        actions=[{"kind": "skip", "label": "That's all"} if already else {"kind": "nothing_spent", "label": "Nothing spent yet"}],
+    )
+
+
 def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, user_id: str, text: str) -> None:
     awaiting, wmeta = waiting_for(db, req)
     say(db, req, text, MessageSender.NGO, user_id=user_id)
@@ -277,42 +314,62 @@ def handle_ngo_message(db: Session, req: ReportingRequest, campaign: Campaign, u
         propose_summary(db, req)
         return
     if awaiting == "ask_delivery" and _is(text, SKIP_WORDS):
-        return  # nothing to say: the draft follows
+        if not _has_reported(db, req):
+            say(db, req, NOTHING_TO_REPORT, step="nothing_to_report")
+        return  # otherwise nothing to say: the draft follows
+    if awaiting == "ask_spend" and _is(text, SKIP_WORDS | {"that's all", "thats all", "done", "that is all"}):
+        if not _has_reported(db, req):
+            say(db, req, NOTHING_TO_REPORT, step="nothing_to_report")
+        return  # already reported something: the draft follows
     if awaiting == "ask_spend" and text.strip().lower() == "nothing spent yet":
         prompt = delivery_prompt(db, req)
         if prompt is not None:
             say(db, req, "No problem. Has anything been handed out yet?", step="ask_delivery", **prompt[1])
         return
+    withdrawn_now: list = []
     if awaiting == "confirm_claims":
         if _is(text, YES_WORDS):
             confirm_proposed(db, req, user_id)
             return
         for c in _proposed(db, req):  # a correction replaces what was proposed
+            withdrawn_now.append(c)
             c.status = ClaimStatus.WITHDRAWN
 
     open_inv = db.scalar(
         select(Investigation).where(Investigation.campaign_id == campaign.id, Investigation.status == InvestigationStatus.OPEN)
     )
     if open_inv is not None and awaiting not in ("confirm_claims", "ask_delivery", "ask_spend"):
+        if text.strip().endswith("?"):  # a question, not an explanation: say what this chat is for
+            say(
+                db,
+                req,
+                "I can only help with your spending update, so I can't answer that. For the open question, upload a document or tell me what explains the difference.",
+                step="off_topic",
+                awaiting=awaiting,
+                actions=wmeta.get("actions", []),
+            )
+            return
         # A reply to a clarification question: record it on the investigation; numbers
         # only change when evidence or a confirmed claim changes.
         open_inv.resolution = ((open_inv.resolution or "") + f"\nNGO reply: {text}").strip()
         say(db, req, "Thanks, I've noted that. If you have a document for the difference, upload it and I'll re-check.")
         return
 
-    report = ActivityReport(campaign_id=campaign.id, reporting_request_id=req.id, description=text)
-    db.add(report)
-    db.flush()
-    retrieval.index(db, retrieval.doc_for_report(db, report))
     ai = get_ai()
     if ai is None:
+        _save_report(db, req, campaign, text)
         say(db, req, "Thanks! Automatic reading is off right now, so please add each expense and activity with \"Add manually\".", mode="manual")
         return
     try:
         extracted = ai.extract_claims(campaign.title, text)
     except AIUnavailable:
+        _save_report(db, req, campaign, text)
         say(db, req, "Thanks! I couldn't read that automatically. Please add each expense and activity with \"Add manually\".", mode="manual")
         return
+    if not extracted.is_report:
+        _decline_off_topic(db, req, restore=withdrawn_now)
+        return
+    report = _save_report(db, req, campaign, text)
 
     missing_amount: list[str] = []
     for e in extracted.expenses:
@@ -502,8 +559,8 @@ def is_ready_for_draft(db: Session, req: ReportingRequest) -> bool:
     expenses, impacts = claims_for_request(db, req)
     reported = [c for c in expenses if c.status == ClaimStatus.REPORTED]
     pending = [c for c in expenses + impacts if c.status == ClaimStatus.PROPOSED]
-    if waiting_for(db, req)[0] == "ask_delivery":
-        return False  # the NGO is deciding whether to report anything handed out
+    if waiting_for(db, req)[0] is not None:
+        return False  # the assistant is still waiting on an answer; never draft mid-question
     return bool(reported) and not pending and all(_settled(c.evidence_status) for c in reported)
 
 

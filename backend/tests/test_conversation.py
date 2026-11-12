@@ -213,3 +213,63 @@ def test_nothing_spent_yet_moves_to_the_delivery_question(client, ai, ngo, publi
 def test_public_timeline_carries_the_plan_limitations(client, published_campaign):
     tl = client.get(f"/api/campaigns/{published_campaign}/timeline").json()
     assert tl["limitations"] and all(isinstance(x, str) for x in tl["limitations"])
+
+
+def test_a_question_gets_a_scope_reply_and_changes_nothing(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    thread = say(client, ngo, req_id, "what else can we do with the money?")
+    assert thread["claims"] == []
+    last = agent_msgs(thread)[-1]
+    assert "can only help with your spending update" in last["content"] and last["meta"]["awaiting"] == "ask_spend"
+    assert action_kinds(last) == ["nothing_spent"]
+    assert not any("drafted" in m["content"] for m in agent_msgs(thread))
+
+
+def test_a_question_does_not_wipe_a_proposal_waiting_for_yes(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    thread = say(client, ngo, req_id, "wait, can we spend it on something else?")
+    live = [c for c in thread["claims"] if c["status"] != "withdrawn"]
+    assert [c["status"] for c in live] == ["proposed"]
+    assert agent_msgs(thread)[-1]["meta"]["awaiting"] == "confirm_claims"
+
+
+def test_no_second_draft_while_a_follow_up_question_is_open(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    claim = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()["claims"][0]
+    upload(client, ngo, req_id, png("TOTAL=500 NO=D4"), claim["id"])
+    thread = say(client, ngo, req_id, "Skip")
+    drafts = sum(1 for m in agent_msgs(thread) if m["meta"].get("step") == "queue_for_review")
+    assert drafts == 1
+
+    thread = say(client, ngo, req_id, "We also bought 10 pens")  # no price: the assistant must ask, not re-draft
+    assert agent_msgs(thread)[-1]["meta"]["awaiting"] == "ask_amount"
+    assert sum(1 for m in agent_msgs(thread) if m["meta"].get("step") == "queue_for_review") == 1
+    thread = say(client, ngo, req_id, "30$")  # the answer belongs to the pens, not to a new "unspecified expense"
+    assert any("10 pens" in c["description"] and c["amount_cents"] == 3000 for c in thread["claims"])
+    assert not any("unspecified" in c["description"] for c in thread["claims"])
+
+
+def test_that_is_all_finishes_when_something_is_already_reported(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    thread = say(client, ngo, req_id, "Nothing spent yet")
+    thread = say(client, ngo, req_id, "Skip")  # nothing was reported at all: no draft, a plain note
+    assert "nothing to report" in agent_msgs(thread)[-1]["content"].lower()
+    assert not any("drafted" in m["content"] for m in agent_msgs(thread))
+
+
+def test_a_question_during_a_receipt_gap_is_not_recorded_as_an_explanation(client, ai, ngo, published_campaign):
+    req_id = open_request(client, ngo, published_campaign)
+    say(client, ngo, req_id, "We bought 25 school kits for $500.")
+    claim = client.post(f"/api/reporting-requests/{req_id}/claims/confirm", headers=ngo).json()["claims"][0]
+    thread = upload(client, ngo, req_id, png("TOTAL=420 NO=E5"), claim["id"])
+    gap = agent_msgs(thread)[-1]
+    thread = say(client, ngo, req_id, "what else can we do with the money?")
+    last = agent_msgs(thread)[-1]
+    assert "can only help with your spending update" in last["content"]
+    assert [a["kind"] for a in last["meta"]["actions"]] == [a["kind"] for a in gap["meta"]["actions"]]  # buttons stay
+    open_inv = thread["investigations"][0]
+    assert "NGO reply" not in (open_inv.get("resolution") or "")
+    thread = say(client, ngo, req_id, "The supplier gave us a discount.")  # a real explanation is still noted
+    assert "noted that" in agent_msgs(thread)[-1]["content"]
