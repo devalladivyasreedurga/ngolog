@@ -1,6 +1,6 @@
 # NGOLog
 
-Donation transparency for NGO campaigns. Donors give through PayPal. An AI assistant asks the NGO how the money was spent, checks receipts against what was reported, and drafts a donor update that the NGO approves before anyone sees it.
+NGOLog helps donors see where their money goes. People donate to NGO campaigns through PayPal, while our AI follows up with NGOs, reviews spending evidence, and helps them share updates with donors, making donations more transparent and trustworthy.
 
 Built for the PayPal AI Hackathon. NGOLog holds no funds, makes no payouts and never calls anyone fraudulent. "Consistent" means a document matches what the NGO reported. It is not an audit.
 
